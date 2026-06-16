@@ -3,12 +3,13 @@ import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import SelectInput from "ink-select-input";
 import Spinner from "ink-spinner";
-import { loadUcf, type UcfDocument } from "@relay/core";
+import { loadUcf, resumeTargets, type UcfDocument } from "@relay/core";
 import { Banner } from "./Banner.js";
 import { theme, toolName } from "./theme.js";
 
 export type UcfAction =
   | { kind: "resume"; target: string; mode: "replay" | "native"; doc: UcfDocument }
+  | { kind: "transcript"; doc: UcfDocument }
   | { kind: "summary"; doc: UcfDocument };
 
 export function OpenUcf({
@@ -72,11 +73,14 @@ export function OpenUcf({
     );
   }
 
+  // Offer every valid target except the tool that produced this conversation.
+  const resumeItems = resumeTargets(doc.source.tool).flatMap((target) => [
+    { label: `▶ Resume in ${toolName(target)} — continue this thread`, value: `resume:${target}:native` },
+    { label: `▶ Resume in ${toolName(target)} — new chat primed with a recap`, value: `resume:${target}:replay` },
+  ]);
   const items = [
-    { label: `Resume into ${toolName("claude")}  (replay)`, value: "claude:replay" },
-    { label: `Resume into ${toolName("claude")}  (native)`, value: "claude:native" },
-    { label: `Resume into ${toolName("codex")}  (replay)`, value: "codex:replay" },
-    { label: `Resume into ${toolName("codex")}  (native)`, value: "codex:native" },
+    { label: "💬 Read the conversation", value: "transcript" },
+    ...resumeItems,
     { label: "View summary", value: "summary" },
     { label: "← Back", value: "back" },
   ];
@@ -94,9 +98,12 @@ export function OpenUcf({
         onSelect={(i) => {
           const v = (i as { value: string }).value;
           if (v === "back") return onBack();
+          if (v === "transcript") return onAction({ kind: "transcript", doc });
           if (v === "summary") return onAction({ kind: "summary", doc });
-          const [target, mode] = v.split(":") as [string, "replay" | "native"];
-          onAction({ kind: "resume", target, mode, doc });
+          if (v.startsWith("resume:")) {
+            const [, target, mode] = v.split(":") as [string, string, "replay" | "native"];
+            onAction({ kind: "resume", target, mode, doc });
+          }
         }}
       />
       <Box marginTop={1}>

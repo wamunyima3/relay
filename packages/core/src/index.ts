@@ -50,3 +50,4 @@ export { redactString, DEFAULT_RULES, type RedactionRule } from "./redact/redact
 // Rendering & summary
 export { renderMarkdown, buildPrimingPrompt, type RenderOptions } from "./resume/render.js";
 export { buildSummary } from "./resume/summary.js";
+export { isInjectedText } from "./util/title.js";

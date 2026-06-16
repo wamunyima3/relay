@@ -15,6 +15,7 @@ import { useAsync } from "../hooks/useAsync.js";
 
 export type DetailAction =
   | { kind: "resume"; target: string; mode: "replay" | "native"; doc: UcfDocument }
+  | { kind: "transcript"; doc: UcfDocument }
   | { kind: "export"; doc: UcfDocument; ref: SessionRef }
   | { kind: "summary"; doc: UcfDocument };
 
@@ -75,13 +76,21 @@ export function SessionDetail({
   const targets = resumeTargets(session.tool);
   const events = doc.events.length;
 
-  // One replay + one native option per valid resume target (e.g. a Cursor chat
-  // can go to both Claude and Codex; Cursor is never a target — it's read-only).
+  // For each valid target, offer "continue" (native — reconstructs the whole
+  // thread and shows up in that tool's history/resume picker) and "new primed
+  // chat" (replay). The source tool is never a target; Cursor is read-only.
   const resumeItems = targets.flatMap((target) => [
-    { label: `Resume into ${toolName(target)}  (replay — universal, lossy)`, value: `resume:${target}:replay` },
-    { label: `Resume into ${toolName(target)}  (native — high fidelity)`, value: `resume:${target}:native` },
+    {
+      label: `▶ Resume in ${toolName(target)} — continue this thread (adds to ${toolName(target)}'s history)`,
+      value: `resume:${target}:native`,
+    },
+    {
+      label: `▶ Resume in ${toolName(target)} — new chat primed with a recap`,
+      value: `resume:${target}:replay`,
+    },
   ]);
   const items = [
+    { label: "💬 Read the conversation", value: "transcript" },
     ...resumeItems,
     { label: "Export to a UCF file", value: "export" },
     { label: "View summary", value: "summary" },
@@ -109,6 +118,7 @@ export function SessionDetail({
         onSelect={(i) => {
           const v = (i as { value: string }).value;
           if (v === "back") return onBack();
+          if (v === "transcript") return onAction({ kind: "transcript", doc });
           if (v === "export") return onAction({ kind: "export", doc, ref: session });
           if (v === "summary") return onAction({ kind: "summary", doc });
           if (v.startsWith("resume:")) {

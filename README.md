@@ -84,10 +84,18 @@ Move a coding conversation between Claude Code, Codex, and Cursor.
 - **Browse conversations** — lists every Claude Code, Codex, and Cursor session on
   the machine (newest first, with real titles). **Type to search** across titles,
   projects, and tools; press **Tab** to cycle the tool filter
-  (all → Claude → Codex → Cursor). Pick one to see its details, then resume it into
-  another tool (replay or native), export it to a UCF file, or read its summary.
-- **Open a UCF file** — load a previously exported `.ucf.json` and resume it into
-  either tool.
+  (all → Claude → Codex → Cursor). Pick one to open it.
+- **Read the conversation** — a scrollable, read-only view of the full chat
+  (injected scaffolding like permissions/AGENTS.md is hidden so you see the real
+  dialogue). Scroll with ↑/↓, page with space/`b`, jump with `g`/`G`.
+- **Resume into another tool** — pick a destination (the tool that produced the
+  chat is never offered). "Continue this thread" reconstructs the whole
+  conversation as a **native session in the target tool's own history**, placed at
+  the top — so if you live in a GUI, you just open that tool and pick it from your
+  recent chats, no terminal command needed. "New chat primed with a recap" is the
+  lossy/universal variant. The terminal `--resume` command is still printed as a
+  fallback.
+- **Open a UCF file** — load a previously exported `.ucf.json` to read or resume it.
 
 Type to search, arrow keys to move, `↵` to select, `Tab` to filter by tool, `Esc`
 to go back, `Ctrl+C` to quit. It needs an interactive terminal; for pipelines and

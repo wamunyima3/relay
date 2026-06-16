@@ -15,6 +15,7 @@ import { SessionDetail, type DetailAction } from "./ui/SessionDetail.js";
 import { OpenUcf, type UcfAction } from "./ui/OpenUcf.js";
 import { Running } from "./ui/Running.js";
 import { MessageView, type MessageLine } from "./ui/MessageView.js";
+import { TranscriptView } from "./ui/TranscriptView.js";
 import { theme, toolName } from "./ui/theme.js";
 
 /** All screens the app can be on. A tiny hand-rolled router via discriminated union. */
@@ -23,14 +24,22 @@ type Screen =
   | { k: "browse" }
   | { k: "detail"; session: SessionRef }
   | { k: "open-ucf" }
+  | { k: "transcript"; doc: UcfDocument; back: Screen }
   | { k: "run"; label: string; run: () => Promise<MessageLine[]>; back: Screen }
   | { k: "message"; subtitle: string; lines: MessageLine[]; back: Screen };
 
 function resumeResultLines(target: string, mode: string, result: ImportResult): MessageLine[] {
+  const name = toolName(target);
+  const howToFind =
+    mode === "native"
+      ? `It's now at the top of ${name}'s resumable history. Open ${name} in the project folder and pick it from your recent chats / resume list — no command needed.`
+      : `A new chat primed with the full recap is now at the top of ${name}'s history. Open ${name} and select it.`;
   return [
-    { text: `✔ Staged a ${mode} session for ${toolName(target)}.`, color: theme.ok, bold: true },
+    { text: `✔ Added this conversation to ${name}.`, color: theme.ok, bold: true },
     { text: "" },
-    { text: "Resume it with:", color: theme.dim },
+    { text: howToFind },
+    { text: "" },
+    { text: "Prefer the terminal? Run:", color: theme.dim },
     { text: `  ${result.resumeCommand}`, color: theme.accent },
     { text: "" },
     { text: `File: ${result.path}`, color: theme.dim },
@@ -88,12 +97,14 @@ export function App(): React.ReactElement {
     const back: Screen = { k: "detail", session };
     if (a.kind === "resume") runResume(a.target, a.mode, a.doc, back);
     else if (a.kind === "export") runExport(a.doc, a.ref, back);
+    else if (a.kind === "transcript") setScreen({ k: "transcript", doc: a.doc, back });
     else showSummary(a.doc, back);
   }
 
   function handleUcfAction(a: UcfAction) {
     const back: Screen = { k: "open-ucf" };
     if (a.kind === "resume") runResume(a.target, a.mode, a.doc, back);
+    else if (a.kind === "transcript") setScreen({ k: "transcript", doc: a.doc, back });
     else showSummary(a.doc, back);
   }
 
@@ -112,6 +123,8 @@ export function App(): React.ReactElement {
       );
     case "open-ucf":
       return <OpenUcf onAction={handleUcfAction} onBack={home} />;
+    case "transcript":
+      return <TranscriptView doc={screen.doc} onBack={() => setScreen(screen.back)} />;
     case "run":
       return (
         <Running<MessageLine[]>
