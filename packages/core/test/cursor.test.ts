@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { CursorAdapter } from "../src/adapters/cursor.js";
+import { UCF_VERSION } from "../src/ucf/schema.js";
 
 const require = createRequire(import.meta.url);
 
@@ -23,6 +24,16 @@ function buildFixtureDb(path: string): void {
   };
   const db = new DatabaseSync(path);
   db.exec("CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value TEXT)");
+  db.exec("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT)");
+  const putItem = db.prepare("INSERT INTO ItemTable (key, value) VALUES (?, ?)");
+  putItem.run(
+    "composer.composerHeaders",
+    JSON.stringify({
+      allComposers: [
+        { composerId: CID, name: "Fix the Dockerfile", createdAt: 1, lastUpdatedAt: 2, type: "head", unifiedMode: "agent" },
+      ],
+    }),
+  );
   const put = db.prepare("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)");
 
   const headers = [
@@ -62,21 +73,23 @@ beforeAll(async () => {
   dbPath = join(work, "state.vscdb");
   buildFixtureDb(dbPath);
   process.env.RELAY_CURSOR_DB = dbPath;
+  process.env.RELAY_BACKUPS_DIR = join(work, "backups");
 });
 
 afterAll(async () => {
   await rm(work, { recursive: true, force: true });
   delete process.env.RELAY_CURSOR_DB;
+  delete process.env.RELAY_BACKUPS_DIR;
 });
 
 describe("CursorAdapter", () => {
-  it("lists conversations with real names and message counts", async () => {
+  it("lists conversations from the fast index (titles; counts omitted for speed)", async () => {
     const adapter = new CursorAdapter();
     expect(await adapter.available()).toBe(true);
     const sessions = await adapter.list();
     expect(sessions).toHaveLength(1);
     expect(sessions[0]!.title).toBe("Fix the Dockerfile");
-    expect(sessions[0]!.messageCount).toBe(2);
+    expect(sessions[0]!.messageCount).toBeUndefined(); // index has no count
     expect(sessions[0]!.tool).toBe("cursor");
   });
 
@@ -110,8 +123,40 @@ describe("CursorAdapter", () => {
     expect(doc.project.cwd_hint).toBe("/home/me/proj/app");
   });
 
-  it("does not support importing (Cursor is export-only)", () => {
+  it("injects a conversation as a new chat at the top of the index", async () => {
     const adapter = new CursorAdapter();
-    expect((adapter as { importSession?: unknown }).importSession).toBeUndefined();
+    const doc = {
+      ucf_version: UCF_VERSION,
+      conversation_id: "src",
+      title: "Resumed from Codex",
+      source: { tool: "codex", exported_at: "2026-01-01T00:00:00Z" },
+      project: { repo: null, commit: null, cwd_hint: null, git_branch: null },
+      redacted: false,
+      events: [
+        { id: "1", parent: null, role: "user", type: "message", content: [{ kind: "text", text: "continue here" }] },
+        { id: "2", parent: "1", role: "assistant", type: "message", content: [{ kind: "text", text: "sure thing" }] },
+      ],
+    } as const;
+
+    const result = await adapter.importSession(doc as unknown as Parameters<typeof adapter.importSession>[0], {
+      mode: "native",
+    });
+    expect(result.tool).toBe("cursor");
+    expect(result.resumeCommand).toBe(""); // GUI-only, no terminal command
+    expect(result.note).toMatch(/Cursor/);
+    expect(result.backupPath).toBeTruthy();
+
+    // It shows up in the listing, at the top (newest), and re-exports its messages.
+    const sessions = await adapter.list();
+    expect(sessions[0]!.id).toBe(result.sessionId);
+    expect(sessions[0]!.title).toBe("Resumed from Codex");
+
+    const reexported = await adapter.exportSession(sessions[0]!);
+    const texts = reexported.events.map((e) => (e.content[0] as { text?: string })?.text);
+    expect(texts).toContain("continue here");
+    expect(texts).toContain("sure thing");
+
+    // The original index entry is preserved (not clobbered).
+    expect(sessions.some((s) => s.id === CID)).toBe(true);
   });
 });

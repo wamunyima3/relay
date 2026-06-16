@@ -10,10 +10,12 @@ import { createRequire } from "node:module";
 export interface SqliteStatement {
   all(...params: unknown[]): Record<string, unknown>[];
   get(...params: unknown[]): Record<string, unknown> | undefined;
+  run(...params: unknown[]): unknown;
 }
 
 export interface SqliteDb {
   prepare(sql: string): SqliteStatement;
+  exec(sql: string): void;
   close(): void;
 }
 
@@ -23,16 +25,32 @@ interface SqliteModule {
 
 const require = createRequire(import.meta.url);
 
-/** Open a SQLite database read-only. Throws a friendly error if unavailable. */
-export function openReadOnly(path: string): SqliteDb {
-  let mod: SqliteModule;
+function loadModule(): SqliteModule {
   try {
-    mod = require("node:sqlite") as SqliteModule;
+    return require("node:sqlite") as SqliteModule;
   } catch {
     throw new Error(
-      "Reading Cursor needs Node's built-in SQLite (node:sqlite), available in Node 22+. " +
+      "Cursor support needs Node's built-in SQLite (node:sqlite), available in Node 22+. " +
         "Upgrade Node to use the Cursor adapter.",
     );
   }
-  return new mod.DatabaseSync(path, { readOnly: true });
+}
+
+/** Open a SQLite database read-only. Throws a friendly error if unavailable. */
+export function openReadOnly(path: string): SqliteDb {
+  return new (loadModule().DatabaseSync)(path, { readOnly: true });
+}
+
+/**
+ * Open a SQLite database read-write, with a busy timeout so a brief lock held by
+ * a running app (e.g. Cursor) doesn't immediately fail the write.
+ */
+export function openWritable(path: string): SqliteDb {
+  const db = new (loadModule().DatabaseSync)(path);
+  try {
+    db.exec("PRAGMA busy_timeout = 4000");
+  } catch {
+    /* non-fatal */
+  }
+  return db;
 }

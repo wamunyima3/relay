@@ -43,6 +43,11 @@ export function cursorGlobalDb(): string {
   }
 }
 
+/** Relay's own scratch dir, used for safety backups before risky writes. */
+export function relayBackupsDir(): string {
+  return process.env.RELAY_BACKUPS_DIR ?? join(HOME, ".relay", "backups");
+}
+
 /** Build the dated Codex rollout directory for a given date (defaults: now). */
 export function codexDateDir(date = new Date()): string {
   const y = String(date.getUTCFullYear());

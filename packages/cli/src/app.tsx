@@ -30,20 +30,30 @@ type Screen =
 
 function resumeResultLines(target: string, mode: string, result: ImportResult): MessageLine[] {
   const name = toolName(target);
-  const howToFind =
-    mode === "native"
-      ? `It's now at the top of ${name}'s resumable history. Open ${name} in the project folder and pick it from your recent chats / resume list — no command needed.`
-      : `A new chat primed with the full recap is now at the top of ${name}'s history. Open ${name} and select it.`;
-  return [
+  const lines: MessageLine[] = [
     { text: `✔ Added this conversation to ${name}.`, color: theme.ok, bold: true },
     { text: "" },
-    { text: howToFind },
-    { text: "" },
-    { text: "Prefer the terminal? Run:", color: theme.dim },
-    { text: `  ${result.resumeCommand}`, color: theme.accent },
-    { text: "" },
-    { text: `File: ${result.path}`, color: theme.dim },
   ];
+
+  if (result.note) {
+    // GUI-only tools (Cursor): explain how to find it in the app.
+    lines.push({ text: result.note, color: theme.warn });
+    if (result.backupPath) lines.push({ text: `Index backup: ${result.backupPath}`, color: theme.dim });
+  } else {
+    lines.push({
+      text:
+        mode === "native"
+          ? `It's now at the top of ${name}'s resumable history. Open ${name} in the project folder and pick it from your recent chats — no command needed.`
+          : `A new chat primed with the full recap is now at the top of ${name}'s history. Open ${name} and select it.`,
+    });
+  }
+
+  if (result.resumeCommand) {
+    lines.push({ text: "" }, { text: "Prefer the terminal? Run:", color: theme.dim });
+    lines.push({ text: `  ${result.resumeCommand}`, color: theme.accent });
+  }
+  lines.push({ text: "" }, { text: `File: ${result.path}`, color: theme.dim });
+  return lines;
 }
 
 export function App(): React.ReactElement {

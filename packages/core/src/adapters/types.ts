@@ -34,11 +34,15 @@ export interface ImportResult {
   tool: string;
   /** Native session id the destination tool will recognize. */
   sessionId: string;
-  /** Where the native session file was written. */
+  /** Where the native session file was written (or the DB that was modified). */
   path: string;
-  /** Command the user runs to resume it. */
+  /** Terminal command to resume it, or "" for GUI-only tools (e.g. Cursor). */
   resumeCommand: string;
   mode: "replay" | "native";
+  /** Extra human guidance (e.g. "restart Cursor to see it"). */
+  note?: string;
+  /** Path to a safety backup written before modifying existing data, if any. */
+  backupPath?: string;
 }
 
 /**

@@ -3,6 +3,7 @@ import { Command } from "commander";
 import pc from "picocolors";
 
 import { allAdapters, getAdapter, toolIds } from "./adapters/registry.js";
+import type { ImportResult } from "./adapters/types.js";
 import { exportToUcf, loadUcf, resumeIntoTool, saveUcf } from "./core.js";
 import { buildPrimingPrompt, renderMarkdown } from "./resume/render.js";
 
@@ -20,6 +21,17 @@ function fail(message: string): never {
 
 function toolChoiceHelp(): string {
   return `tool to use (${toolIds().join(" | ")})`;
+}
+
+/** Print how to pick up a staged session — a command, or GUI guidance. */
+function printResumeResult(result: ImportResult): void {
+  if (result.resumeCommand) {
+    console.log(`\n  Resume it with:\n  ${pc.cyan(result.resumeCommand)}\n`);
+  } else if (result.note) {
+    console.log(`\n  ${result.note}`);
+    if (result.backupPath) console.log(pc.dim(`  Index backup: ${result.backupPath}`));
+    console.log("");
+  }
 }
 
 /* ----------------------------------- list ---------------------------------- */
@@ -125,7 +137,7 @@ program
       const result = await resumeIntoTool(opts.to, doc, { mode: opts.mode, cwd: opts.cwd });
       console.log(pc.green(`✔ Staged ${opts.mode} session for ${getAdapter(opts.to).label}`));
       console.log(pc.dim(`  ${result.path}`));
-      console.log(`\n  Resume it with:\n  ${pc.cyan(result.resumeCommand)}\n`);
+      printResumeResult(result);
     } catch (e) {
       fail((e as Error).message);
     }
@@ -153,7 +165,7 @@ program
       }
       const result = await resumeIntoTool(opts.to, doc, { mode: opts.mode, cwd: opts.cwd });
       console.log(pc.green(`✔ ${opts.from} → ${opts.to} (${opts.mode})`));
-      console.log(`\n  Resume it with:\n  ${pc.cyan(result.resumeCommand)}\n`);
+      printResumeResult(result);
     } catch (e) {
       fail((e as Error).message);
     }

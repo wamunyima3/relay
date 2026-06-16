@@ -8,10 +8,11 @@ single versioned format (the **Universal Conversation Format**, UCF), strips any
 secrets, and stages it as a resumable session in another tool.
 
 > **Status:** Phases 1–2 (local CLI + interactive UI). Claude Code ⇄ Codex both
-> directions; **Cursor is export-only** — you can pull a Cursor chat into Claude
-> or Codex, not the reverse. Cloud sync and a mobile PWA are on the roadmap below.
-> Built against the on-disk formats of Claude Code, Codex CLI, and Cursor as of
-> mid-2026 — re-verify before relying on it, the vendors move fast.
+> directions. **Cursor reads are solid; writing into Cursor is experimental** — it
+> injects a new chat into Cursor's SQLite DB (insert-only, backs up the index
+> first) and you restart Cursor to see it. Cloud sync and a mobile PWA are on the
+> roadmap below. Built against the on-disk formats of Claude Code, Codex CLI, and
+> Cursor as of mid-2026 — re-verify before relying on it, the vendors move fast.
 
 ---
 
@@ -220,12 +221,14 @@ relay convert --from codex --to claude --mode native
   `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`: a `session_meta` header (with
   `git` info) then `response_item` payloads (`message`, `function_call`,
   `function_call_output`, `reasoning`, `custom_tool_call`).
-- **Cursor** (export-only) — a single SQLite DB (`state.vscdb`) in Cursor's global
-  storage. Conversations are `composerData:<id>` rows; messages ("bubbles") live
-  in `bubbleId:<composerId>:<bubbleId>` rows (`type` 1 = user, 2 = assistant; an
+- **Cursor** — a single SQLite DB (`state.vscdb`) in Cursor's global storage.
+  Conversations are `composerData:<id>` rows; messages ("bubbles") live in
+  `bubbleId:<composerId>:<bubbleId>` rows (`type` 1 = user, 2 = assistant; an
   assistant bubble bundles `thinking`, a `toolFormerData` call+result, and text).
   Listing uses the compact `composer.composerHeaders` index for speed. Read via
-  Node's built-in `node:sqlite` (Node ≥ 22) — no native dependency.
+  Node's built-in `node:sqlite` (Node ≥ 22) — no native dependency. **Writing**
+  (experimental) inserts a new conversation and prepends it to that index after
+  backing the index up to `~/.relay/backups/`; existing chats are never touched.
 
 Override the storage roots with `RELAY_CLAUDE_DIR` / `RELAY_CODEX_DIR` /
 `RELAY_CURSOR_DB` (used by the test suite for hermetic runs).
@@ -253,7 +256,7 @@ relay/
 ## Roadmap
 
 - **Phase 1 (done)** — local CLI + interactive Ink UI, transcript replay + native injection, Claude ⇄ Codex.
-- **Phase 2 (done)** — Cursor read adapter (`state.vscdb` SQLite via `node:sqlite`); export-only, resumable into Claude or Codex. Real conversation titles + search/filter in the UI.
+- **Phase 2 (done)** — Cursor adapter (`state.vscdb` SQLite via `node:sqlite`): read + experimental write-injection, so conversations move both into and out of Cursor. Real conversation titles + search/filter in the UI.
 - **Phase 3** — local watcher daemon + authenticated, end-to-end-encrypted cloud sync; resume on another machine.
 - **Phase 4** — mobile PWA: browse on your phone, trigger a resume on a paired machine.
 - **Phase 5** — model-written summaries, redaction hardening, more adapters (Windsurf, Aider).

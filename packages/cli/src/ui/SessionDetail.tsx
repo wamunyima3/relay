@@ -79,16 +79,20 @@ export function SessionDetail({
   // For each valid target, offer "continue" (native — reconstructs the whole
   // thread and shows up in that tool's history/resume picker) and "new primed
   // chat" (replay). The source tool is never a target; Cursor is read-only.
-  const resumeItems = targets.flatMap((target) => [
-    {
-      label: `▶ Resume in ${toolName(target)} — continue this thread (adds to ${toolName(target)}'s history)`,
-      value: `resume:${target}:native`,
-    },
-    {
-      label: `▶ Resume in ${toolName(target)} — new chat primed with a recap`,
-      value: `resume:${target}:replay`,
-    },
-  ]);
+  const resumeItems = targets.flatMap((target) => {
+    // Cursor injection writes into Cursor's live DB — flag it as experimental.
+    const flag = target === "cursor" ? " (experimental)" : "";
+    return [
+      {
+        label: `▶ Resume in ${toolName(target)} — continue this thread (adds to ${toolName(target)}'s history)${flag}`,
+        value: `resume:${target}:native`,
+      },
+      {
+        label: `▶ Resume in ${toolName(target)} — new chat primed with a recap${flag}`,
+        value: `resume:${target}:replay`,
+      },
+    ];
+  });
   const items = [
     { label: "💬 Read the conversation", value: "transcript" },
     ...resumeItems,

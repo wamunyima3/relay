@@ -1,26 +1,29 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 
-import type { Adapter, ExportOptions, SessionRef } from "./types.js";
+import type { Adapter, ExportOptions, ImportOptions, ImportResult, SessionRef } from "./types.js";
 import type { UcfDocument, UcfEvent } from "../ucf/schema.js";
 import { UCF_VERSION } from "../ucf/schema.js";
 import { reduceOutput } from "../util/text.js";
-import { cursorGlobalDb } from "../util/paths.js";
-import { openReadOnly, type SqliteDb } from "../util/sqlite.js";
+import { cursorGlobalDb, relayBackupsDir } from "../util/paths.js";
+import { openReadOnly, openWritable, type SqliteDb } from "../util/sqlite.js";
 
 /**
- * Cursor adapter — EXPORT ONLY.
+ * Cursor adapter.
  *
  * Cursor keeps conversations in a single global SQLite DB (`state.vscdb`). A
  * conversation is a `composerData:<id>` row; its messages ("bubbles") live in
  * separate `bubbleId:<composerId>:<bubbleId>` rows, ordered by the composer's
  * `fullConversationHeadersOnly` list. Bubble `type` 1 = user, 2 = assistant; an
  * assistant bubble may bundle reasoning (`thinking`), a tool call+result
- * (`toolFormerData`), and text together.
+ * (`toolFormerData`), and text together. The conversation list shown in the UI
+ * comes from a `composer.composerHeaders` index in `ItemTable`.
  *
- * The schema is undocumented and has changed across Cursor releases, so reads
- * are defensive and writing back is intentionally unsupported (the brief treats
- * Cursor injection as too fragile to ship). Relay can pull a Cursor chat out and
- * resume it in Claude or Codex, not the reverse.
+ * Reads are defensive (the schema is undocumented and changes across releases).
+ * Writing back (`importSession`) is **experimental**: it only ever INSERTs a new
+ * conversation (never edits existing chats) and backs up the index before
+ * touching it. Cursor should be restarted to pick up the new conversation.
  */
 
 type Json = Record<string, unknown>;
@@ -321,5 +324,174 @@ export class CursorAdapter implements Adapter {
     }
   }
 
-  // No importSession: Cursor is export-only (see class docs).
+  /**
+   * EXPERIMENTAL: inject a conversation into Cursor as a new chat. Only INSERTs
+   * new rows (a fresh composerId, never editing an existing chat) and prepends an
+   * entry to the `composer.composerHeaders` index after backing it up, so the
+   * conversation appears at the top of Cursor's history. Cursor must be
+   * restarted to see it.
+   */
+  async importSession(doc: UcfDocument, opts: ImportOptions = {}): Promise<ImportResult> {
+    const mode = opts.mode ?? "replay";
+    const composerId = randomUUID();
+    const now = Date.now();
+    const name = doc.title?.slice(0, 80) || `Relay: resumed ${doc.source.tool} chat`;
+
+    const { headers, bubbles } = this.buildBubbles(doc, mode, opts.primingPrompt);
+
+    const db = openWritable(cursorGlobalDb());
+    try {
+      const put = db.prepare("INSERT OR REPLACE INTO cursorDiskKV (key, value) VALUES (?, ?)");
+
+      // 1) message bubbles
+      for (const b of bubbles) {
+        put.run(`bubbleId:${composerId}:${b.bubbleId}`, JSON.stringify(b));
+      }
+
+      // 2) the composer record
+      const composerData = this.buildComposerData(composerId, name, now, headers);
+      put.run(`composerData:${composerId}`, JSON.stringify(composerData));
+
+      // 3) prepend to the conversation index (with a safety backup first)
+      const backupPath = this.prependToIndex(db, composerId, name, now);
+
+      return {
+        tool: this.tool,
+        sessionId: composerId,
+        path: cursorGlobalDb(),
+        resumeCommand: "",
+        mode,
+        note: "Fully quit and reopen Cursor — the conversation is at the top of your chat history.",
+        backupPath,
+      };
+    } finally {
+      db.close();
+    }
+  }
+
+  private buildBubbles(
+    doc: UcfDocument,
+    mode: "replay" | "native",
+    primingPrompt?: string,
+  ): { headers: { bubbleId: string; type: number }[]; bubbles: Json[] } {
+    const headers: { bubbleId: string; type: number }[] = [];
+    const bubbles: Json[] = [];
+    const add = (type: number, text: string) => {
+      const bubbleId = randomUUID();
+      headers.push({ bubbleId, type });
+      bubbles.push({ _v: 2, type, bubbleId, text });
+    };
+
+    if (mode === "replay") {
+      add(BUBBLE_USER, primingPrompt ?? doc.summary ?? "(empty conversation)");
+      return { headers, bubbles };
+    }
+
+    // native: reconstruct a readable thread of user/assistant text bubbles.
+    for (const ev of doc.events) {
+      if (ev.type === "message") {
+        const text = ev.content
+          .filter((b) => b.kind === "text" || b.kind === "code")
+          .map((b) => (b as { text: string }).text)
+          .join("\n")
+          .trim();
+        if (!text) continue;
+        add(ev.role === "user" ? BUBBLE_USER : BUBBLE_ASSISTANT, text);
+      } else if (ev.type === "tool_call") {
+        add(BUBBLE_ASSISTANT, `🔧 ${ev.tool}(${JSON.stringify(ev.input ?? {}).slice(0, 200)})`);
+      } else if (ev.type === "tool_result") {
+        const first = (ev.output ?? "").split("\n").find((l) => l.trim()) ?? "";
+        if (first) add(BUBBLE_ASSISTANT, `↳ ${first.slice(0, 200)}`);
+      }
+    }
+    if (headers.length === 0) add(BUBBLE_USER, doc.summary ?? "(empty conversation)");
+    return { headers, bubbles };
+  }
+
+  private buildComposerData(
+    composerId: string,
+    name: string,
+    now: number,
+    headers: { bubbleId: string; type: number }[],
+  ): Json {
+    return {
+      _v: 16,
+      composerId,
+      name,
+      createdAt: now,
+      lastUpdatedAt: now,
+      unifiedMode: "agent",
+      forceMode: "edit",
+      hasLoaded: true,
+      status: "completed",
+      subtitle: "",
+      text: "",
+      richText: "",
+      conversationMap: {},
+      generatingBubbleIds: [],
+      fullConversationHeadersOnly: headers,
+      context: {
+        composers: [],
+        quotes: [],
+        selectedCommits: [],
+        selectedPullRequests: [],
+        selectedImages: [],
+        folderSelections: [],
+        fileSelections: [],
+        selections: [],
+        terminalSelections: [],
+        notepads: [],
+        cursorRules: [],
+        mentions: {},
+      },
+    };
+  }
+
+  /** Prepend a header to composer.composerHeaders, backing up the original. */
+  private prependToIndex(db: SqliteDb, composerId: string, name: string, now: number): string | undefined {
+    let row: Record<string, unknown> | undefined;
+    try {
+      row = db.prepare("SELECT value FROM ItemTable WHERE key = 'composer.composerHeaders'").get();
+    } catch {
+      return undefined; // no index table — nothing to update/back up
+    }
+    if (!row) return undefined;
+
+    const parsed = parseJsonValue(row.value) ?? {};
+    const all = Array.isArray(parsed.allComposers) ? (parsed.allComposers as Json[]) : [];
+
+    // Mirror an existing entry's shape for maximum compatibility, then override.
+    const template = (all[0] ?? {}) as Json;
+    const entry: Json = {
+      ...template,
+      composerId,
+      name,
+      subtitle: "",
+      createdAt: now,
+      lastUpdatedAt: now,
+      isDraft: false,
+      isArchived: false,
+      hasUnreadMessages: false,
+      hasBlockingPendingActions: false,
+      hasPendingPlan: false,
+    };
+
+    const backupPath = this.backupIndex(row.value);
+    const next = { ...parsed, allComposers: [entry, ...all] };
+    db.prepare("UPDATE ItemTable SET value = ? WHERE key = 'composer.composerHeaders'").run(JSON.stringify(next));
+    return backupPath;
+  }
+
+  private backupIndex(value: unknown): string | undefined {
+    try {
+      const dir = relayBackupsDir();
+      mkdirSync(dir, { recursive: true });
+      const path = join(dir, `cursor-composerHeaders-${Date.now()}.json`);
+      const text = typeof value === "string" ? value : Buffer.from(value as Uint8Array).toString("utf8");
+      writeFileSync(path, text, "utf8");
+      return path;
+    } catch {
+      return undefined;
+    }
+  }
 }
