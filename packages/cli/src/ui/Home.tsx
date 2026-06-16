@@ -20,7 +20,7 @@ const items: Item[] = [
 export function Home({ onSelect }: { onSelect: (a: HomeAction) => void }): React.ReactElement {
   return (
     <Box flexDirection="column">
-      <Banner subtitle="Move a coding conversation between Claude Code and Codex." />
+      <Banner subtitle="Move a coding conversation between Claude Code, Codex, and Cursor." />
       <SelectInput items={items} onSelect={(i) => onSelect((i as Item).value)} />
       <Box marginTop={1}>
         <Text color={theme.dim}>↑/↓ to move · ↵ to select · Ctrl+C to exit</Text>

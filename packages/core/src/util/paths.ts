@@ -1,4 +1,4 @@
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
 export const HOME = homedir();
@@ -24,6 +24,23 @@ export function codexSessionsDir(): string {
  */
 export function encodeClaudeCwd(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, "-");
+}
+
+/**
+ * Cursor stores all conversations in a single global SQLite database. Its
+ * location is OS-specific; `RELAY_CURSOR_DB` overrides it (used by tests).
+ */
+export function cursorGlobalDb(): string {
+  if (process.env.RELAY_CURSOR_DB) return process.env.RELAY_CURSOR_DB;
+  const sub = join("Cursor", "User", "globalStorage", "state.vscdb");
+  switch (platform()) {
+    case "darwin":
+      return join(HOME, "Library", "Application Support", sub);
+    case "win32":
+      return join(process.env.APPDATA ?? join(HOME, "AppData", "Roaming"), sub);
+    default:
+      return join(process.env.XDG_CONFIG_HOME ?? join(HOME, ".config"), sub);
+  }
 }
 
 /** Build the dated Codex rollout directory for a given date (defaults: now). */

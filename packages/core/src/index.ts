@@ -18,7 +18,13 @@ export {
 } from "./core.js";
 
 // Adapters & discovery
-export { allAdapters, getAdapter, toolIds } from "./adapters/registry.js";
+export {
+  allAdapters,
+  getAdapter,
+  toolIds,
+  importableToolIds,
+  resumeTargets,
+} from "./adapters/registry.js";
 export type {
   Adapter,
   SessionRef,

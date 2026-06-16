@@ -26,6 +26,8 @@ beforeAll(async () => {
   work = await mkdtemp(join(tmpdir(), "relay-cli-test-"));
   process.env.RELAY_CLAUDE_DIR = join(work, "claude-empty");
   process.env.RELAY_CODEX_DIR = join(work, "codex");
+  // Point Cursor at a nonexistent DB so the adapter is skipped (not the real one).
+  process.env.RELAY_CURSOR_DB = join(work, "no-cursor.vscdb");
   const dir = join(work, "codex", "2026", "03", "31");
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, "rollout-2026-03-31T07-00-00-aaaa1111.jsonl"), CODEX_FIXTURE);
@@ -35,6 +37,7 @@ afterAll(async () => {
   await rm(work, { recursive: true, force: true });
   delete process.env.RELAY_CLAUDE_DIR;
   delete process.env.RELAY_CODEX_DIR;
+  delete process.env.RELAY_CURSOR_DB;
 });
 
 describe("Home", () => {

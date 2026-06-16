@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
-import { allAdapters, type SessionRef } from "@relay/core";
+import { allAdapters, toolIds, type SessionRef } from "@relay/core";
 import { Banner } from "./Banner.js";
 import { theme, toolBadge, toolName } from "./theme.js";
 import { useAsync } from "../hooks/useAsync.js";
@@ -17,8 +17,8 @@ async function loadAllSessions(): Promise<SessionRef[]> {
   return all;
 }
 
-type ToolFilter = "all" | "claude" | "codex";
-const FILTERS: ToolFilter[] = ["all", "claude", "codex"];
+type ToolFilter = string; // "all" or a tool id
+const FILTERS: ToolFilter[] = ["all", ...toolIds()];
 
 /** A row's searchable haystack. */
 function haystack(s: SessionRef): string {
@@ -95,7 +95,7 @@ export function SessionPicker({
           <Text color={theme.accent}>
             <Spinner type="dots" />
           </Text>{" "}
-          Scanning Claude Code and Codex storage…
+          Scanning Claude Code, Codex, and Cursor storage…
         </Text>
       </Box>
     );

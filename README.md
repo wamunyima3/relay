@@ -1,16 +1,17 @@
 # Relay
 
-Port AI coding conversations between tools. Start a session in **Codex**, pick it
-up — with full context — in **Claude Code**, and back again.
+Port AI coding conversations between tools. Start a session in **Cursor** or
+**Codex**, pick it up — with full context — in **Claude Code**, and back again.
 
 Relay reads a conversation out of one tool's local storage, normalizes it to a
 single versioned format (the **Universal Conversation Format**, UCF), strips any
 secrets, and stages it as a resumable session in another tool.
 
-> **Status:** Phase 1 (local CLI, Claude Code ⇄ Codex). Cursor, cloud sync, and a
-> mobile PWA are on the roadmap below. Built against the on-disk formats of Claude
-> Code and Codex CLI as of mid-2026 — re-verify before relying on it, the vendors
-> move fast.
+> **Status:** Phases 1–2 (local CLI + interactive UI). Claude Code ⇄ Codex both
+> directions; **Cursor is export-only** — you can pull a Cursor chat into Claude
+> or Codex, not the reverse. Cloud sync and a mobile PWA are on the roadmap below.
+> Built against the on-disk formats of Claude Code, Codex CLI, and Cursor as of
+> mid-2026 — re-verify before relying on it, the vendors move fast.
 
 ---
 
@@ -73,18 +74,18 @@ relay-ui
 
 ```
 ⇄ Relay · conversation portability
-Move a coding conversation between Claude Code and Codex.
+Move a coding conversation between Claude Code, Codex, and Cursor.
 
 ❯ Browse conversations  — pick one and move it to another tool
   Open a UCF file       — inspect or resume an exported conversation
   Quit
 ```
 
-- **Browse conversations** — lists every Claude Code and Codex session on the
-  machine (newest first, with real titles and message counts). **Type to search**
-  across titles, projects, and tools; press **Tab** to cycle the tool filter
-  (all → Claude → Codex). Pick one to see its details, then resume it into the
-  other tool (replay or native), export it to a UCF file, or read its summary.
+- **Browse conversations** — lists every Claude Code, Codex, and Cursor session on
+  the machine (newest first, with real titles). **Type to search** across titles,
+  projects, and tools; press **Tab** to cycle the tool filter
+  (all → Claude → Codex → Cursor). Pick one to see its details, then resume it into
+  another tool (replay or native), export it to a UCF file, or read its summary.
 - **Open a UCF file** — load a previously exported `.ucf.json` and resume it into
   either tool.
 
@@ -206,14 +207,20 @@ relay convert --from codex --to claude --mode native
 
 - **Claude Code** — append-only JSONL at `~/.claude/projects/<encoded-cwd>/<id>.jsonl`,
   with `uuid`/`parentUuid` chains and `message.content[]` blocks
-  (`text`/`thinking`/`tool_use`/`tool_result`/`image`).
+  (`text`/`thinking`/`tool_use`/`tool_result`/`image`). Title from `aiTitle`.
 - **Codex CLI** — append-only rollout JSONL at
-  `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`: a `session_meta` header then
-  `response_item` payloads (`message`, `function_call`, `function_call_output`,
-  `reasoning`, `custom_tool_call`).
+  `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`: a `session_meta` header (with
+  `git` info) then `response_item` payloads (`message`, `function_call`,
+  `function_call_output`, `reasoning`, `custom_tool_call`).
+- **Cursor** (export-only) — a single SQLite DB (`state.vscdb`) in Cursor's global
+  storage. Conversations are `composerData:<id>` rows; messages ("bubbles") live
+  in `bubbleId:<composerId>:<bubbleId>` rows (`type` 1 = user, 2 = assistant; an
+  assistant bubble bundles `thinking`, a `toolFormerData` call+result, and text).
+  Listing uses the compact `composer.composerHeaders` index for speed. Read via
+  Node's built-in `node:sqlite` (Node ≥ 22) — no native dependency.
 
-Override the storage roots with `RELAY_CLAUDE_DIR` / `RELAY_CODEX_DIR` (used by
-the test suite for hermetic runs).
+Override the storage roots with `RELAY_CLAUDE_DIR` / `RELAY_CODEX_DIR` /
+`RELAY_CURSOR_DB` (used by the test suite for hermetic runs).
 
 ## Development
 
@@ -238,7 +245,7 @@ relay/
 ## Roadmap
 
 - **Phase 1 (done)** — local CLI + interactive Ink UI, transcript replay + native injection, Claude ⇄ Codex.
-- **Phase 2** — Cursor read adapter (`state.vscdb` SQLite, `composerData:*` BLOBs).
+- **Phase 2 (done)** — Cursor read adapter (`state.vscdb` SQLite via `node:sqlite`); export-only, resumable into Claude or Codex. Real conversation titles + search/filter in the UI.
 - **Phase 3** — local watcher daemon + authenticated, end-to-end-encrypted cloud sync; resume on another machine.
 - **Phase 4** — mobile PWA: browse on your phone, trigger a resume on a paired machine.
 - **Phase 5** — model-written summaries, redaction hardening, more adapters (Windsurf, Aider).
