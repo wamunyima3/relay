@@ -32,21 +32,65 @@ the destination model rebuilds its working context from that. Repo files travel
 separately and naturally through **git** — Relay records the commit/branch so the
 destination can warn about drift, but it never syncs code.
 
+## Two ways to drive it
+
+Relay ships as a small monorepo with two front-ends over one engine:
+
+| Folder | Package | Binary | For |
+|---|---|---|---|
+| `packages/core` | `@relay/core` | `relay` | Scriptable commands + the engine library |
+| `packages/cli` | `@relay/cli` | `relay-ui` | Interactive terminal UI (Ink), like Claude Code |
+
+Pick whichever fits: type exact commands with `relay`, or launch `relay-ui` and
+drive everything with arrow keys.
+
 ## Install
 
 ```bash
 pnpm install
-pnpm build
-npm link        # optional: puts `relay` on your PATH
+pnpm build              # builds both packages
 ```
 
-Or run straight from source without building:
+Run from source without building:
 
 ```bash
-pnpm relay <command>      # alias for: tsx src/cli.ts
+pnpm relay <command>    # scriptable CLI  (packages/core)
+pnpm ui                 # interactive UI  (packages/cli)
 ```
 
-## Usage
+Put the binaries on your PATH:
+
+```bash
+pnpm -r --filter @relay/core --filter @relay/cli exec npm link
+# now `relay` and `relay-ui` are global
+```
+
+## Interactive UI
+
+```bash
+relay-ui
+```
+
+```
+⇄ Relay · conversation portability
+Move a coding conversation between Claude Code and Codex.
+
+❯ Browse conversations  — pick one and move it to another tool
+  Open a UCF file       — inspect or resume an exported conversation
+  Quit
+```
+
+- **Browse conversations** — lists every Claude Code and Codex session on the
+  machine (newest first, with message counts and titles). Pick one to see its
+  details, then resume it into the other tool (replay or native), export it to a
+  UCF file, or read its summary.
+- **Open a UCF file** — load a previously exported `.ucf.json` and resume it into
+  either tool.
+
+Arrow keys to move, `↵` to select, `Esc` to go back, `Ctrl+C` to quit. It needs an
+interactive terminal; for pipelines and scripts use `relay` below.
+
+## Scriptable CLI
 
 ### List what's stored locally
 
@@ -133,16 +177,20 @@ relay convert --from codex --to claude --mode native
    (Claude/Codex)    (adapter)      (normalized)    (safe)    (adapter)      (resumable)
 ```
 
-- **UCF** (`src/ucf/schema.ts`) — a versioned, Zod-validated, append-only event
-  stream modelled on the JSONL shape Claude and Codex already use. Typed content
-  blocks; large tool outputs truncated + hashed; every event keeps provenance.
-- **Adapters** (`src/adapters/`) — one module per tool, each doing `export` (read
-  native → UCF) and `import` (UCF → native). All the tool-specific mess lives
-  here so the core stays clean. Adding Cursor is "write another adapter."
-- **Redaction** (`src/redact/`) — fail-closed secret scanning over text, tool
-  output, tool input, and titles.
-- **Resume** (`src/resume/`) — deterministic, no-API summarizer + transcript /
-  priming-prompt renderers.
+- **UCF** (`packages/core/src/ucf/schema.ts`) — a versioned, Zod-validated,
+  append-only event stream modelled on the JSONL shape Claude and Codex already
+  use. Typed content blocks; large tool outputs truncated + hashed; every event
+  keeps provenance.
+- **Adapters** (`packages/core/src/adapters/`) — one module per tool, each doing
+  `export` (read native → UCF) and `import` (UCF → native). All the tool-specific
+  mess lives here so the core stays clean. Adding Cursor is "write another adapter."
+- **Redaction** (`packages/core/src/redact/`) — fail-closed secret scanning over
+  text, tool output, tool input, and titles.
+- **Resume** (`packages/core/src/resume/`) — deterministic, no-API summarizer +
+  transcript / priming-prompt renderers.
+- **Interactive UI** (`packages/cli/src/`) — an Ink (React-for-terminals) app that
+  drives the engine through `@relay/core`'s library exports. No tool logic lives
+  here; it's purely a front-end.
 
 ### Storage formats (verified against real sessions on this machine)
 
@@ -160,14 +208,26 @@ the test suite for hermetic runs).
 ## Development
 
 ```bash
-pnpm test          # vitest, with synthetic fixtures mirroring the real formats
+pnpm install
+pnpm build          # build both packages (cli imports built @relay/core)
+pnpm test           # run every package's vitest suite
 pnpm typecheck
-pnpm build
+```
+
+Layout:
+
+```
+relay/
+├─ package.json            # workspace root (scripts: build, test, relay, ui)
+├─ pnpm-workspace.yaml
+└─ packages/
+   ├─ core/                # @relay/core — engine + scriptable `relay` CLI
+   └─ cli/                 # @relay/cli  — interactive `relay-ui` (Ink)
 ```
 
 ## Roadmap
 
-- **Phase 1 (done)** — local CLI, transcript replay + native injection, Claude ⇄ Codex.
+- **Phase 1 (done)** — local CLI + interactive Ink UI, transcript replay + native injection, Claude ⇄ Codex.
 - **Phase 2** — Cursor read adapter (`state.vscdb` SQLite, `composerData:*` BLOBs).
 - **Phase 3** — local watcher daemon + authenticated, end-to-end-encrypted cloud sync; resume on another machine.
 - **Phase 4** — mobile PWA: browse on your phone, trigger a resume on a paired machine.

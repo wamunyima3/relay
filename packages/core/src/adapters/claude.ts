@@ -60,23 +60,25 @@ export class ClaudeAdapter implements Adapter {
 
   async list(): Promise<SessionRef[]> {
     if (!existsSync(claudeProjectsDir())) return [];
-    const refs: SessionRef[] = [];
     const projectDirs = await readdir(claudeProjectsDir(), { withFileTypes: true });
+
+    // Gather every session file path first, then peek them all in parallel —
+    // sequential reads make listing painfully slow against large stores.
+    const paths: string[] = [];
     for (const dir of projectDirs) {
       if (!dir.isDirectory()) continue;
       const dirPath = join(claudeProjectsDir(), dir.name);
-      let files: string[];
       try {
-        files = (await readdir(dirPath)).filter((f) => f.endsWith(".jsonl"));
+        for (const file of await readdir(dirPath)) {
+          if (file.endsWith(".jsonl")) paths.push(join(dirPath, file));
+        }
       } catch {
-        continue;
-      }
-      for (const file of files) {
-        const path = join(dirPath, file);
-        const ref = await this.peek(path).catch(() => null);
-        if (ref) refs.push(ref);
+        // unreadable project dir — skip
       }
     }
+
+    const settled = await Promise.all(paths.map((p) => this.peek(p).catch(() => null)));
+    const refs = settled.filter((r): r is SessionRef => r !== null);
     refs.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
     return refs;
   }

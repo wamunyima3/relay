@@ -64,11 +64,9 @@ export class CodexAdapter implements Adapter {
 
   async list(): Promise<SessionRef[]> {
     const files = await walkRollouts(codexSessionsDir());
-    const refs: SessionRef[] = [];
-    for (const path of files) {
-      const ref = await this.peek(path).catch(() => null);
-      if (ref) refs.push(ref);
-    }
+    // Peek all rollouts in parallel for a responsive listing.
+    const settled = await Promise.all(files.map((p) => this.peek(p).catch(() => null)));
+    const refs = settled.filter((r): r is SessionRef => r !== null);
     refs.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
     return refs;
   }
