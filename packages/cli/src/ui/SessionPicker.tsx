@@ -1,6 +1,5 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
-import SelectInput from "ink-select-input";
 import Spinner from "ink-spinner";
 import { allAdapters, type SessionRef } from "@relay/core";
 import { Banner } from "./Banner.js";
@@ -18,12 +17,23 @@ async function loadAllSessions(): Promise<SessionRef[]> {
   return all;
 }
 
-function rowLabel(s: SessionRef): string {
-  const when = s.updatedAt?.slice(0, 16).replace("T", " ") ?? "";
-  const title = s.title ? ` ${s.title.slice(0, 48)}` : "";
-  const msgs = s.messageCount != null ? `${s.messageCount} msgs` : "";
-  return `${toolBadge(s.tool)} ${toolName(s.tool).padEnd(11)} ${when}  ${msgs.padStart(8)} ${title}`;
+type ToolFilter = "all" | "claude" | "codex";
+const FILTERS: ToolFilter[] = ["all", "claude", "codex"];
+
+/** A row's searchable haystack. */
+function haystack(s: SessionRef): string {
+  return `${toolName(s.tool)} ${s.title ?? ""} ${s.cwd ?? ""} ${s.id}`.toLowerCase();
 }
+
+/** Every whitespace-separated term must appear somewhere in the row. */
+function matches(s: SessionRef, query: string): boolean {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const hay = haystack(s);
+  return terms.every((t) => hay.includes(t));
+}
+
+const WINDOW = 12;
 
 export function SessionPicker({
   onPick,
@@ -33,10 +43,49 @@ export function SessionPicker({
   onBack: () => void;
 }): React.ReactElement {
   const { loading, error, value } = useAsync(loadAllSessions, []);
+  const sessions = useMemo(() => value ?? [], [value]);
 
-  useInput((_input, key) => {
-    if (key.escape) onBack();
-  });
+  const [query, setQuery] = useState("");
+  const [tool, setTool] = useState<ToolFilter>("all");
+  const [index, setIndex] = useState(0);
+
+  const filtered = useMemo(
+    () => sessions.filter((s) => (tool === "all" || s.tool === tool) && matches(s, query)),
+    [sessions, tool, query],
+  );
+
+  // Keep the highlight in range whenever the filtered set shrinks/changes.
+  const safeIndex = Math.min(index, Math.max(0, filtered.length - 1));
+
+  useInput(
+    (input, key) => {
+      if (key.escape) return onBack();
+      if (key.return) {
+        const picked = filtered[safeIndex];
+        if (picked) onPick(picked);
+        return;
+      }
+      if (key.upArrow) return setIndex(Math.max(0, safeIndex - 1));
+      if (key.downArrow) return setIndex(Math.min(filtered.length - 1, safeIndex + 1));
+      if (key.tab) {
+        const next = FILTERS[(FILTERS.indexOf(tool) + 1) % FILTERS.length]!;
+        setTool(next);
+        setIndex(0);
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setQuery((q) => q.slice(0, -1));
+        setIndex(0);
+        return;
+      }
+      // Printable text → extend the query (ignore control/meta combos).
+      if (input && !key.ctrl && !key.meta) {
+        setQuery((q) => q + input);
+        setIndex(0);
+      }
+    },
+    { isActive: !loading && !error },
+  );
 
   if (loading) {
     return (
@@ -62,33 +111,52 @@ export function SessionPicker({
     );
   }
 
-  const sessions = value ?? [];
-  if (sessions.length === 0) {
-    return (
-      <Box flexDirection="column">
-        <Banner subtitle="No conversations found" />
-        <Text color={theme.dim}>No Claude Code or Codex sessions were found on this machine.</Text>
-        <Text color={theme.dim}>Esc to go back</Text>
-      </Box>
-    );
-  }
-
-  const items = sessions.map((s, idx) => ({ label: rowLabel(s), value: String(idx), key: `${s.tool}-${s.id}` }));
+  // Window the list so the highlight stays visible in long results.
+  const start = Math.min(Math.max(0, safeIndex - Math.floor(WINDOW / 2)), Math.max(0, filtered.length - WINDOW));
+  const view = filtered.slice(start, start + WINDOW);
 
   return (
     <Box flexDirection="column">
-      <Banner subtitle={`${sessions.length} conversation(s) · pick one to move`} />
-      <SelectInput
-        items={items}
-        limit={12}
-        onSelect={(i) => {
-          const picked = sessions[Number((i as { value: string }).value)];
-          if (picked) onPick(picked);
-        }}
-      />
-      <Box marginTop={1}>
-        <Text color={theme.dim}>↑/↓ to move · ↵ to select · Esc to go back</Text>
+      <Banner subtitle={`${filtered.length}/${sessions.length} conversation(s)`} />
+
+      <Box>
+        <Text color={theme.accent}>Search </Text>
+        <Text>{query}</Text>
+        <Text color={theme.dim}>▌</Text>
+        <Text color={theme.dim}>
+          {"   "}
+          [Tab] tool: <Text color={tool === "all" ? theme.dim : theme.brand}>{tool}</Text>
+        </Text>
       </Box>
+
+      <Box flexDirection="column" marginTop={1}>
+        {view.length === 0 ? (
+          <Text color={theme.dim}>No conversations match your search.</Text>
+        ) : (
+          view.map((s, i) => {
+            const selected = start + i === safeIndex;
+            return <Row key={`${s.tool}-${s.id}`} session={s} selected={selected} />;
+          })
+        )}
+      </Box>
+
+      <Box marginTop={1}>
+        <Text color={theme.dim}>type to search · ↑/↓ move · ↵ select · Tab filter · Esc back</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function Row({ session: s, selected }: { session: SessionRef; selected: boolean }): React.ReactElement {
+  const when = s.updatedAt?.slice(0, 16).replace("T", " ") ?? "";
+  const msgs = s.messageCount != null ? `${s.messageCount}` : "?";
+  const title = s.title ?? "(untitled)";
+  return (
+    <Box>
+      <Text color={selected ? theme.brand : theme.dim}>{selected ? "❯ " : "  "}</Text>
+      <Text color={selected ? theme.brand : undefined} bold={selected}>
+        {toolBadge(s.tool)} {toolName(s.tool).padEnd(11)} {when} {msgs.padStart(4)} msgs  {title.slice(0, 48)}
+      </Text>
     </Box>
   );
 }

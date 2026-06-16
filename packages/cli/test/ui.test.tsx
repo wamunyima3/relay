@@ -58,6 +58,22 @@ describe("SessionPicker", () => {
     expect(frame).toContain("Codex");
     expect(frame).toContain("make the build green");
   });
+
+  it("live-filters the list as the user types", async () => {
+    const { lastFrame, stdin } = render(<SessionPicker onPick={() => {}} onBack={() => {}} />);
+    await delay(150);
+    expect(lastFrame() ?? "").toContain("make the build green");
+
+    // A matching term keeps the row visible.
+    stdin.write("build");
+    await delay(50);
+    expect(lastFrame() ?? "").toContain("make the build green");
+
+    // Adding a non-matching term filters everything out.
+    stdin.write(" zzz");
+    await delay(50);
+    expect(lastFrame() ?? "").toContain("No conversations match");
+  });
 });
 
 describe("App", () => {

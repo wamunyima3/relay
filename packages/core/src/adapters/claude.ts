@@ -15,6 +15,7 @@ import { UCF_VERSION } from "../ucf/schema.js";
 import { readJsonl, writeJsonl } from "../util/jsonl.js";
 import { reduceOutput } from "../util/text.js";
 import { claudeProjectsDir, encodeClaudeCwd } from "../util/paths.js";
+import { firstHumanPromptTitle } from "../util/title.js";
 
 /** Minimal shape of the Claude JSONL lines we care about. */
 interface ClaudeLine {
@@ -26,13 +27,39 @@ interface ClaudeLine {
   cwd?: string;
   gitBranch?: string;
   version?: string;
-  slug?: string;
-  title?: string;
+  /** Model-generated title, carried on `type: "ai-title"` lines. */
+  aiTitle?: string;
   message?: {
     role?: string;
     model?: string;
     content?: unknown;
   };
+}
+
+/** Pull plain text out of a Claude message content array. */
+function claudeMessageText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((b) => (b && typeof b === "object" && (b as { type?: string }).type === "text" ? String((b as { text?: unknown }).text ?? "") : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Derive a conversation title from Claude lines: prefer the most recent
+ * model-generated `aiTitle`, else the first genuine user prompt.
+ */
+function deriveClaudeTitle(lines: ClaudeLine[]): string | undefined {
+  let aiTitle: string | undefined;
+  const userMessages: { role: string | undefined; text: string }[] = [];
+  for (const l of lines) {
+    if (l.type === "ai-title" && l.aiTitle) aiTitle = l.aiTitle; // keep the last one
+    if (l.type === "user" && l.message?.content) {
+      userMessages.push({ role: "user", text: claudeMessageText(l.message.content) });
+    }
+  }
+  return aiTitle ?? firstHumanPromptTitle(userMessages);
 }
 
 function normalizeToolResultContent(content: unknown): string {
@@ -88,15 +115,12 @@ export class ClaudeAdapter implements Adapter {
     const { objects } = await readJsonl(path);
     const lines = objects as ClaudeLine[];
     let cwd: string | undefined;
-    let title: string | undefined;
     let count = 0;
     for (const l of lines) {
       if (l.cwd && !cwd) cwd = l.cwd;
-      if ((l.type === "ai-title" || l.type === "summary") && (l.title || l.slug)) {
-        title = l.title ?? l.slug;
-      }
       if ((l.type === "user" || l.type === "assistant") && l.message?.content) count += 1;
     }
+    const title = deriveClaudeTitle(lines);
     const st = await stat(path);
     return {
       tool: this.tool,
@@ -126,7 +150,7 @@ export class ClaudeAdapter implements Adapter {
     let cwd: string | undefined;
     let gitBranch: string | undefined;
     let version: string | undefined;
-    let title: string | undefined = ref.title;
+    const title = ref.title ?? deriveClaudeTitle(lines);
     let sessionId = ref.id;
 
     const events: UcfEvent[] = [];
@@ -140,9 +164,6 @@ export class ClaudeAdapter implements Adapter {
       if (l.gitBranch && !gitBranch) gitBranch = l.gitBranch;
       if (l.version && !version) version = l.version;
       if (l.sessionId) sessionId = l.sessionId;
-      if ((l.type === "ai-title" || l.type === "summary") && (l.title || l.slug)) {
-        title = l.title ?? l.slug;
-      }
 
       const isMsg = l.type === "user" || l.type === "assistant" || l.type === "system";
       const content = l.message?.content;

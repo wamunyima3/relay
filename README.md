@@ -81,14 +81,24 @@ Move a coding conversation between Claude Code and Codex.
 ```
 
 - **Browse conversations** — lists every Claude Code and Codex session on the
-  machine (newest first, with message counts and titles). Pick one to see its
-  details, then resume it into the other tool (replay or native), export it to a
-  UCF file, or read its summary.
+  machine (newest first, with real titles and message counts). **Type to search**
+  across titles, projects, and tools; press **Tab** to cycle the tool filter
+  (all → Claude → Codex). Pick one to see its details, then resume it into the
+  other tool (replay or native), export it to a UCF file, or read its summary.
 - **Open a UCF file** — load a previously exported `.ucf.json` and resume it into
   either tool.
 
-Arrow keys to move, `↵` to select, `Esc` to go back, `Ctrl+C` to quit. It needs an
-interactive terminal; for pipelines and scripts use `relay` below.
+Type to search, arrow keys to move, `↵` to select, `Tab` to filter by tool, `Esc`
+to go back, `Ctrl+C` to quit. It needs an interactive terminal; for pipelines and
+scripts use `relay` below.
+
+### Conversation titles
+
+Relay shows the same name each tool shows in its own history: Claude Code's
+model-generated `aiTitle`, and — since Codex stores no title — the first genuine
+user prompt of a Codex session. Injected scaffolding (environment context,
+`AGENTS.md`, IDE hints, slash-command wrappers) is skipped so the name reflects
+what you actually asked.
 
 ## Scriptable CLI
 

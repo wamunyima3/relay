@@ -25,7 +25,7 @@ afterAll(async () => {
 function claudeFixture(): string {
   const sid = "11111111-1111-1111-1111-111111111111";
   const lines = [
-    { type: "ai-title", title: "Fix the checkbox bug" },
+    { type: "ai-title", aiTitle: "Fix the checkbox bug" },
     {
       type: "user",
       uuid: "u1",

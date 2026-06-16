@@ -15,6 +15,7 @@ import { UCF_VERSION } from "../ucf/schema.js";
 import { readJsonl, writeJsonl } from "../util/jsonl.js";
 import { reduceOutput } from "../util/text.js";
 import { codexSessionsDir, codexDateDir } from "../util/paths.js";
+import { firstHumanPromptTitle } from "../util/title.js";
 
 interface CodexLine {
   timestamp?: string;
@@ -76,8 +77,8 @@ export class CodexAdapter implements Adapter {
     const lines = objects as CodexLine[];
     let id = basename(path, ".jsonl");
     let cwd: string | undefined;
-    let title: string | undefined;
     let count = 0;
+    const userMessages: { role: string | undefined; text: string }[] = [];
     for (const l of lines) {
       if (l.type === "session_meta" && l.payload) {
         id = String(l.payload.id ?? id);
@@ -85,12 +86,13 @@ export class CodexAdapter implements Adapter {
       }
       if (l.type === "response_item" && l.payload?.type === "message") {
         count += 1;
-        if (!title && l.payload.role === "user") {
-          const t = codexText(l.payload.content).replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, "").trim();
-          if (t) title = t.slice(0, 80);
+        if (l.payload.role === "user") {
+          userMessages.push({ role: "user", text: codexText(l.payload.content) });
         }
       }
     }
+    // Codex stores no title; its name is the first genuine user prompt.
+    const title = firstHumanPromptTitle(userMessages);
     const st = await stat(path);
     return {
       tool: this.tool,
@@ -121,6 +123,9 @@ export class CodexAdapter implements Adapter {
     let cwd: string | undefined;
     let version: string | undefined;
     let originator: string | undefined;
+    let repo: string | null = null;
+    let commit: string | null = null;
+    let gitBranch: string | null = null;
 
     const events: UcfEvent[] = [];
     let prev: string | null = null;
@@ -137,6 +142,13 @@ export class CodexAdapter implements Adapter {
         cwd = l.payload.cwd ? String(l.payload.cwd) : cwd;
         version = l.payload.cli_version ? String(l.payload.cli_version) : version;
         originator = l.payload.originator ? String(l.payload.originator) : originator;
+        // Codex records git info in session_meta — use it for free.
+        const git = l.payload.git as { repository_url?: string; commit_hash?: string; branch?: string } | undefined;
+        if (git) {
+          repo = git.repository_url ?? repo;
+          commit = git.commit_hash ?? commit;
+          gitBranch = git.branch ?? gitBranch;
+        }
         continue;
       }
       if (l.type !== "response_item" || !l.payload) continue;
@@ -228,7 +240,12 @@ export class CodexAdapter implements Adapter {
     return {
       ucf_version: UCF_VERSION,
       conversation_id: sessionId,
-      title: ref.title,
+      title: ref.title ?? firstHumanPromptTitle(
+        events.filter((e) => e.type === "message" && e.role === "user").map((e) => ({
+          role: "user",
+          text: e.content.map((b) => ("text" in b ? b.text : "")).join("\n"),
+        })),
+      ),
       source: {
         tool: this.tool,
         version: version ?? originator,
@@ -236,10 +253,10 @@ export class CodexAdapter implements Adapter {
         native_session_id: sessionId,
       },
       project: {
-        repo: null,
-        commit: null,
+        repo,
+        commit,
         cwd_hint: cwd ?? null,
-        git_branch: null,
+        git_branch: gitBranch,
       },
       events,
       redacted: false,
