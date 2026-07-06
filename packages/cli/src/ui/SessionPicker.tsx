@@ -22,7 +22,8 @@ const FILTERS: ToolFilter[] = ["all", ...toolIds()];
 
 /** A row's searchable haystack. */
 function haystack(s: SessionRef): string {
-  return `${toolName(s.tool)} ${s.title ?? ""} ${s.cwd ?? ""} ${s.id}`.toLowerCase();
+  const relayed = s.relayed ? "relayed" : "";
+  return `${toolName(s.tool)} ${s.title ?? ""} ${s.cwd ?? ""} ${s.id} ${relayed}`.toLowerCase();
 }
 
 /** Every whitespace-separated term must appear somewhere in the row. */
@@ -157,6 +158,7 @@ function Row({ session: s, selected }: { session: SessionRef; selected: boolean 
       <Text color={selected ? theme.brand : undefined} bold={selected}>
         {toolBadge(s.tool)} {toolName(s.tool).padEnd(11)} {when} {msgs.padStart(4)} msgs  {title.slice(0, 48)}
       </Text>
+      {s.relayed ? <Text color={theme.accent}> ⇄</Text> : null}
     </Box>
   );
 }

@@ -19,9 +19,12 @@ const INJECTED_PREFIXES = [
   "<command-args",
   "<local-command",
   "<system-reminder",
+  "<turn_aborted",
   "# agents.md",
   "# files mentioned by the user",
+  "# context from my ide setup",
   "caveat: the messages below",
+  "[request interrupted",
 ];
 
 /** True if `text` looks like injected scaffolding rather than a human prompt. */
