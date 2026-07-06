@@ -138,7 +138,7 @@ export class ClaudeAdapter implements Adapter {
       return this.peek(idOrPath);
     }
     const all = await this.list();
-    const match = all.find((s) => s.id === idOrPath);
+    const match = all.find((s) => s.id === idOrPath || s.id.startsWith(idOrPath));
     if (!match) throw new Error(`Claude session not found: ${idOrPath}`);
     return match;
   }

@@ -134,6 +134,13 @@ describe("ClaudeAdapter", () => {
     expect(first.parentUuid).toBeNull();
   });
 
+  it("resolves a session by its short id prefix, matching how `relay list` displays it", async () => {
+    const adapter = new ClaudeAdapter();
+    const fullId = "11111111-1111-1111-1111-111111111111";
+    const ref = await adapter.resolve(fullId.slice(0, 8));
+    expect(ref.id).toBe(fullId);
+  });
+
   it("packages a replay session as a single priming message", async () => {
     const adapter = new ClaudeAdapter();
     const srcPath = join(work, "claude", "-repo-app", "11111111-1111-1111-1111-111111111111.jsonl");
