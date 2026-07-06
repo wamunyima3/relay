@@ -1,3 +1,4 @@
+import { isInjectedText } from "../util/title.js";
 import type { UcfDocument, UcfEvent } from "../ucf/schema.js";
 
 /** Heuristics for pulling file paths out of tool inputs. */
@@ -48,9 +49,19 @@ export function buildSummary(doc: UcfDocument): string {
   const tools = collectTools(events);
   const files = collectFiles(events);
 
-  const firstUserEvent = userMsgs.find((e) => eventText(e));
+  // Injected/synthetic turns (slash-command wrappers, skill bodies) are real
+  // conversation events but were never typed by the user — skip them when
+  // picking the request text shown as "Opening request" / "Most recent request".
+  const genuineUserMsgs = userMsgs.filter((e) => !e.provenance?.meta);
+  const firstUserEvent = genuineUserMsgs.find((e) => {
+    const t = eventText(e);
+    return t && !isInjectedText(t);
+  });
   const firstUser = firstUserEvent ? eventText(firstUserEvent) : undefined;
-  const lastUser = [...userMsgs].reverse().find((e) => eventText(e));
+  const lastUser = [...genuineUserMsgs].reverse().find((e) => {
+    const t = eventText(e);
+    return t && !isInjectedText(t);
+  });
   const lastUserText = lastUser ? eventText(lastUser) : undefined;
 
   const lines: string[] = [];

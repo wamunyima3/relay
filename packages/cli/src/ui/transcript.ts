@@ -62,7 +62,11 @@ export function buildTranscriptLines(doc: UcfDocument, width: number): MessageLi
       const text = blockText(ev.content);
       if (!text) continue;
       // Hide injected scaffolding (permissions, environment context, AGENTS.md,
-      // IDE hints) so the reader sees the real human↔assistant dialogue.
+      // IDE hints, skill/slash-command bodies) so the reader sees the real
+      // human↔assistant dialogue. `provenance.meta` is the source tool's own
+      // signal (e.g. Claude's `isMeta`); isInjectedText is a text-prefix
+      // fallback for scaffolding that carries no such signal.
+      if (ev.provenance?.meta) continue;
       if (ev.role !== "assistant" && isInjectedText(text)) continue;
       const who =
         ev.role === "user" ? "🧑 You" : ev.role === "assistant" ? "🤖 Assistant" : "⚙️  System";

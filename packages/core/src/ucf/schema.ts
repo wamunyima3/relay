@@ -96,6 +96,8 @@ export const ucfEvent = z.object({
       native_id: z.string().optional(),
       line: z.number().int().optional(),
       native_type: z.string().optional(),
+      /** Source tool flagged this as injected/synthetic (e.g. Claude's `isMeta`), not a genuine human turn. */
+      meta: z.boolean().optional(),
     })
     .optional(),
 });

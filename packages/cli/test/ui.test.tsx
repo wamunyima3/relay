@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { Home } from "../src/ui/Home.js";
 import { SessionPicker } from "../src/ui/SessionPicker.js";
+import { MessageView } from "../src/ui/MessageView.js";
 import { App } from "../src/app.js";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -76,6 +77,17 @@ describe("SessionPicker", () => {
     stdin.write(" zzz");
     await delay(50);
     expect(lastFrame() ?? "").toContain("No conversations match");
+  });
+});
+
+describe("MessageView", () => {
+  it("doesn't claim to return home by default — app.tsx wires onDone to the previous screen, not always home", () => {
+    const { lastFrame } = render(
+      <MessageView subtitle="Done" lines={[{ text: "✔ ok" }]} onDone={() => {}} />,
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("return home");
+    expect(frame).toContain("go back");
   });
 });
 

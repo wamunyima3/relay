@@ -141,6 +141,88 @@ describe("ClaudeAdapter", () => {
     expect(ref.id).toBe(fullId);
   });
 
+  it("exports user/assistant turns whose message.content is a bare string, not a block array", async () => {
+    const sid = "44444444-4444-4444-4444-444444444444";
+    const lines = [
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        sessionId: sid,
+        cwd: "/repo/app",
+        timestamp: "2026-06-01T09:00:00Z",
+        message: { role: "user", content: "quick question, is this complete?" },
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: "u1",
+        sessionId: sid,
+        timestamp: "2026-06-01T09:00:01Z",
+        message: { role: "assistant", content: "Let me check." },
+      },
+    ];
+    const dir = join(work, "claude", "-repo-app3");
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, `${sid}.jsonl`);
+    await writeFile(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+
+    const adapter = new ClaudeAdapter();
+    const ref = await adapter.resolve(path);
+    const doc = await adapter.exportSession(ref);
+    expect(doc.events).toHaveLength(2);
+    expect(doc.events[0]?.content).toEqual([{ kind: "text", text: "quick question, is this complete?" }]);
+    expect(doc.events[1]?.content).toEqual([{ kind: "text", text: "Let me check." }]);
+  });
+
+  it("does not treat isMeta lines (skill/slash-command bodies) as the genuine first prompt", async () => {
+    const sid = "33333333-3333-3333-3333-333333333333";
+    const lines = [
+      {
+        type: "user",
+        uuid: "u0",
+        parentUuid: null,
+        sessionId: sid,
+        cwd: "/repo/app",
+        timestamp: "2026-06-01T09:00:00Z",
+        isMeta: true,
+        message: { role: "user", content: [{ type: "text", text: "Base directory for this skill: /some/skill/path\n\nLots of injected boilerplate." }] },
+      },
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: "u0",
+        sessionId: sid,
+        timestamp: "2026-06-01T09:00:01Z",
+        message: { role: "user", content: [{ type: "text", text: "Please fix the login bug." }] },
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: "u1",
+        sessionId: sid,
+        timestamp: "2026-06-01T09:00:02Z",
+        message: { role: "assistant", model: "claude-sonnet-4-6", content: [{ type: "text", text: "Sure, looking now." }] },
+      },
+    ];
+    const dir = join(work, "claude", "-repo-app2");
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, `${sid}.jsonl`);
+    await writeFile(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+
+    const adapter = new ClaudeAdapter();
+    const ref = await adapter.resolve(path);
+    expect(ref.title).toBe("Please fix the login bug.");
+    // The isMeta line shouldn't count toward the displayed message count either.
+    expect(ref.messageCount).toBe(2);
+
+    const doc = await adapter.exportSession(ref);
+    const metaEvent = doc.events.find((e) => e.provenance?.meta === true);
+    expect(metaEvent).toBeTruthy();
+    const genuineEvent = doc.events.find((e) => e.content.some((b) => b.kind === "text" && b.text === "Please fix the login bug."));
+    expect(genuineEvent?.provenance?.meta).toBeFalsy();
+  });
+
   it("packages a replay session as a single priming message", async () => {
     const adapter = new ClaudeAdapter();
     const srcPath = join(work, "claude", "-repo-app", "11111111-1111-1111-1111-111111111111.jsonl");
