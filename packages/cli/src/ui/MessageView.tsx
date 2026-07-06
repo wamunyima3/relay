@@ -11,12 +11,14 @@ export interface MessageLine {
 
 /**
  * A generic result/info screen: a titled block of lines plus a footer that
- * returns home. Used for success results, errors, and the summary view.
+ * returns to wherever the caller came from (session detail, the UCF-file
+ * screen, or home — `onDone` is whatever the caller wired up, not always
+ * home). Used for success results, errors, and the summary view.
  */
 export function MessageView({
   subtitle,
   lines,
-  footer = "↵ or Esc to return home",
+  footer = "↵ or Esc to go back",
   onDone,
 }: {
   subtitle: string;
