@@ -332,6 +332,14 @@ export class CursorAdapter implements Adapter {
    * restarted to see it.
    */
   async importSession(doc: UcfDocument, opts: ImportOptions = {}): Promise<ImportResult> {
+    // Unlike Claude/Codex (which happily create their session directory on
+    // first write), Cursor's DB must already exist with its real schema —
+    // there's no sensible "create a fresh Cursor DB from scratch". Without
+    // this check, INSERTing into a missing/empty file surfaces a raw
+    // "no such table: cursorDiskKV" instead of a clear message.
+    if (!(await this.available())) {
+      throw new Error(`${this.label} storage not found on this machine.`);
+    }
     const mode = opts.mode ?? "replay";
     const composerId = randomUUID();
     const now = Date.now();

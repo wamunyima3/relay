@@ -160,3 +160,30 @@ describe("CursorAdapter", () => {
     expect(sessions.some((s) => s.id === CID)).toBe(true);
   });
 });
+
+describe("CursorAdapter on a machine without Cursor installed", () => {
+  it("importSession fails with a clear message instead of a raw SQLite error", async () => {
+    const missingDbDir = await mkdtemp(join(tmpdir(), "relay-no-cursor-"));
+    const prevDb = process.env.RELAY_CURSOR_DB;
+    process.env.RELAY_CURSOR_DB = join(missingDbDir, "state.vscdb"); // never created
+    try {
+      const adapter = new CursorAdapter();
+      expect(await adapter.available()).toBe(false);
+      const doc = {
+        ucf_version: UCF_VERSION,
+        conversation_id: "src",
+        title: "Resumed from Codex",
+        source: { tool: "codex", exported_at: "2026-01-01T00:00:00Z" },
+        project: { repo: null, commit: null, cwd_hint: null, git_branch: null },
+        redacted: false,
+        events: [],
+      } as const;
+      await expect(
+        adapter.importSession(doc as unknown as Parameters<typeof adapter.importSession>[0], { mode: "replay" }),
+      ).rejects.toThrow("Cursor storage not found on this machine.");
+    } finally {
+      process.env.RELAY_CURSOR_DB = prevDb;
+      await rm(missingDbDir, { recursive: true, force: true });
+    }
+  });
+});
