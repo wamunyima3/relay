@@ -37,4 +37,24 @@ describe("buildTranscriptLines", () => {
     // Injected scaffolding is hidden.
     expect(text).not.toContain("environment_context");
   });
+
+  it("hides events flagged provenance.meta even when the text matches no known prefix", () => {
+    const lines = buildTranscriptLines(
+      doc([
+        {
+          id: "0",
+          parent: null,
+          role: "user",
+          type: "message",
+          content: [{ kind: "text", text: "Base directory for this skill: /some/path\n\nBoilerplate the prefix list doesn't know about." }],
+          provenance: { meta: true },
+        },
+        { id: "1", parent: "0", role: "user", type: "message", content: [{ kind: "text", text: "What broke the build?" }] },
+      ]),
+      100,
+    );
+    const text = lines.map((l) => l.text).join("\n");
+    expect(text).not.toContain("Base directory for this skill");
+    expect(text).toContain("What broke the build?");
+  });
 });
