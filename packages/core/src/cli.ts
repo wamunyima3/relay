@@ -6,6 +6,7 @@ import { allAdapters, getAdapter, toolIds } from "./adapters/registry.js";
 import type { ImportResult } from "./adapters/types.js";
 import { exportToUcf, loadUcf, resumeIntoTool, saveUcf } from "./core.js";
 import { buildPrimingPrompt, renderMarkdown } from "./resume/render.js";
+import { stripScaffolding } from "./resume/strip.js";
 
 const program = new Command();
 
@@ -128,7 +129,8 @@ program
     try {
       const doc = await loadUcf(ucfPath);
       if (opts.print) {
-        console.log(buildPrimingPrompt(doc, getAdapter(opts.to).label));
+        // Mirror exactly what resumeIntoTool would write.
+        console.log(buildPrimingPrompt(stripScaffolding(doc), getAdapter(opts.to).label));
         return;
       }
       if (opts.mode !== "replay" && opts.mode !== "native") {

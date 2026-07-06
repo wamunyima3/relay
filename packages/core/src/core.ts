@@ -7,6 +7,7 @@ import { parseUcf, type UcfDocument } from "./ucf/schema.js";
 import { redactUcf, type UcfRedactionReport } from "./redact/redactUcf.js";
 import { buildSummary } from "./resume/summary.js";
 import { buildPrimingPrompt } from "./resume/render.js";
+import { stripScaffolding } from "./resume/strip.js";
 import { detectGit } from "./util/git.js";
 
 export interface ExportToUcfOptions {
@@ -89,10 +90,14 @@ export async function resumeIntoTool(
   if (!adapter.importSession) {
     throw new Error(`${adapter.label} does not support writing sessions yet.`);
   }
+  // The destination injects its own scaffolding on resume; carrying the
+  // source's along bloats prompts and pollutes native history. The UCF file
+  // itself keeps full fidelity — only the destination copy is cleaned.
+  const cleaned = stripScaffolding(doc);
   const importOpts: ImportOptions = {
     mode: opts.mode ?? "replay",
     cwd: opts.cwd,
-    primingPrompt: buildPrimingPrompt(doc, adapter.label),
+    primingPrompt: buildPrimingPrompt(cleaned, adapter.label),
   };
-  return adapter.importSession(doc, importOpts);
+  return adapter.importSession(cleaned, importOpts);
 }
