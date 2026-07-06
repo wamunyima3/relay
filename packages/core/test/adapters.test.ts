@@ -73,6 +73,7 @@ function codexFixture(): string {
   const sid = "22222222-2222-2222-2222-222222222222";
   const lines = [
     { timestamp: "2026-03-31T07:00:00Z", type: "session_meta", payload: { id: sid, cwd: "/repo/app", cli_version: "0.118.0", originator: "codex_cli" } },
+    { timestamp: "2026-03-31T07:00:00Z", type: "turn_context", payload: { model: "gpt-5.4", cwd: "/repo/app" } },
     { timestamp: "2026-03-31T07:00:01Z", type: "event_msg", payload: { type: "task_started" } },
     { timestamp: "2026-03-31T07:00:02Z", type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "list the services" }] } },
     { timestamp: "2026-03-31T07:00:03Z", type: "response_item", payload: { type: "reasoning", summary: [{ type: "summary_text", text: "I will grep" }] } },
@@ -96,6 +97,7 @@ describe("ClaudeAdapter", () => {
 
     const doc = await adapter.exportSession(ref);
     expect(doc.source.tool).toBe("claude");
+    expect(doc.source.model).toBe("claude-sonnet-4-6");
     expect(doc.project.cwd_hint).toBe("/repo/app");
     expect(doc.project.git_branch).toBe("main");
 
@@ -135,6 +137,12 @@ describe("ClaudeAdapter", () => {
     ) as { type: string; parentUuid: unknown };
     expect(first.type).toBe("user");
     expect(first.parentUuid).toBeNull();
+    // Assistant lines carry the source model, not a "relay" placeholder that
+    // makes the destination warn about an unrecognizable model.
+    const assistant = objects.find(
+      (o) => (o as { type?: string }).type === "assistant",
+    ) as { message: { model?: string } };
+    expect(assistant.message.model).toBe("claude-sonnet-4-6");
   });
 
   it("resolves a session by its short id prefix, matching how `relay list` displays it", async () => {
@@ -259,6 +267,7 @@ describe("CodexAdapter", () => {
     const doc = await adapter.exportSession(ref);
 
     expect(doc.source.tool).toBe("codex");
+    expect(doc.source.model).toBe("gpt-5.4");
     expect(doc.project.cwd_hint).toBe("/repo/app");
 
     const toolCall = doc.events.find((e) => e.type === "tool_call");

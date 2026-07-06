@@ -123,6 +123,7 @@ export class CodexAdapter implements Adapter {
     let cwd: string | undefined;
     let version: string | undefined;
     let originator: string | undefined;
+    let model: string | undefined;
     let repo: string | null = null;
     let commit: string | null = null;
     let gitBranch: string | null = null;
@@ -149,6 +150,11 @@ export class CodexAdapter implements Adapter {
           commit = git.commit_hash ?? commit;
           gitBranch = git.branch ?? gitBranch;
         }
+        continue;
+      }
+      // Codex records the active model on turn_context lines.
+      if (l.type === "turn_context" && l.payload?.model && !model) {
+        model = String(l.payload.model);
         continue;
       }
       if (l.type !== "response_item" || !l.payload) continue;
@@ -249,6 +255,7 @@ export class CodexAdapter implements Adapter {
       source: {
         tool: this.tool,
         version: version ?? originator,
+        model,
         exported_at: new Date().toISOString(),
         native_session_id: sessionId,
       },

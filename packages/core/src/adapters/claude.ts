@@ -152,6 +152,7 @@ export class ClaudeAdapter implements Adapter {
     let cwd: string | undefined;
     let gitBranch: string | undefined;
     let version: string | undefined;
+    let model: string | undefined;
     const title = ref.title ?? deriveClaudeTitle(lines);
     let sessionId = ref.id;
 
@@ -166,6 +167,8 @@ export class ClaudeAdapter implements Adapter {
       if (l.gitBranch && !gitBranch) gitBranch = l.gitBranch;
       if (l.version && !version) version = l.version;
       if (l.sessionId) sessionId = l.sessionId;
+      // Skip Relay's own placeholder so round-tripped sessions don't pin it.
+      if (l.message?.model && l.message.model !== "relay" && !model) model = l.message.model;
 
       const isMsg = l.type === "user" || l.type === "assistant" || l.type === "system";
       const rawContent = l.message?.content;
@@ -205,6 +208,7 @@ export class ClaudeAdapter implements Adapter {
       source: {
         tool: this.tool,
         version,
+        model,
         exported_at: new Date().toISOString(),
         native_session_id: sessionId,
       },
@@ -357,6 +361,9 @@ export class ClaudeAdapter implements Adapter {
   ): unknown[] {
     const out: unknown[] = [];
     let parentUuid: string | null = null;
+    // Claude Code warns when it can't recognize a session's model — carry the
+    // real source model through instead of a "relay" placeholder when known.
+    const model = doc.source.model ?? "relay";
 
     for (const ev of doc.events) {
       const uuid = randomUUID();
@@ -384,7 +391,7 @@ export class ClaudeAdapter implements Adapter {
           ...common,
           type: role,
           message: role === "assistant"
-            ? { role, model: "relay", content: blocks }
+            ? { role, model, content: blocks }
             : { role, content: blocks },
         });
         parentUuid = uuid;
@@ -394,7 +401,7 @@ export class ClaudeAdapter implements Adapter {
           type: "assistant",
           message: {
             role: "assistant",
-            model: "relay",
+            model,
             content: [
               {
                 type: "tool_use",
