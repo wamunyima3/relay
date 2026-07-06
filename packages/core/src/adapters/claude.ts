@@ -29,6 +29,8 @@ interface ClaudeLine {
   version?: string;
   /** Model-generated title, carried on `type: "ai-title"` lines. */
   aiTitle?: string;
+  /** Claude's own marker for synthetic/injected turns (slash commands, skill invocations) — never a genuine human prompt. */
+  isMeta?: boolean;
   message?: {
     role?: string;
     model?: string;
@@ -55,7 +57,7 @@ function deriveClaudeTitle(lines: ClaudeLine[]): string | undefined {
   const userMessages: { role: string | undefined; text: string }[] = [];
   for (const l of lines) {
     if (l.type === "ai-title" && l.aiTitle) aiTitle = l.aiTitle; // keep the last one
-    if (l.type === "user" && l.message?.content) {
+    if (l.type === "user" && !l.isMeta && l.message?.content) {
       userMessages.push({ role: "user", text: claudeMessageText(l.message.content) });
     }
   }
@@ -118,7 +120,7 @@ export class ClaudeAdapter implements Adapter {
     let count = 0;
     for (const l of lines) {
       if (l.cwd && !cwd) cwd = l.cwd;
-      if ((l.type === "user" || l.type === "assistant") && l.message?.content) count += 1;
+      if ((l.type === "user" || l.type === "assistant") && !l.isMeta && l.message?.content) count += 1;
     }
     const title = deriveClaudeTitle(lines);
     const st = await stat(path);
@@ -186,6 +188,7 @@ export class ClaudeAdapter implements Adapter {
           ts: l.timestamp,
           line: lineNo,
           maxOutputBytes: opts.maxOutputBytes,
+          isMeta: l.isMeta,
         });
         if (ev) {
           events.push(ev);
@@ -225,6 +228,7 @@ export class ClaudeAdapter implements Adapter {
       ts?: string;
       line: number;
       maxOutputBytes?: number;
+      isMeta?: boolean;
     },
   ): UcfEvent | null {
     if (!block || typeof block !== "object") return null;
@@ -238,7 +242,7 @@ export class ClaudeAdapter implements Adapter {
           role: ctx.role,
           type: "message",
           content: [{ kind: "text", text: String(b.text ?? "") }],
-          provenance: { native_type: "text", line: ctx.line },
+          provenance: { native_type: "text", line: ctx.line, meta: ctx.isMeta || undefined },
         };
       case "thinking":
         return {
