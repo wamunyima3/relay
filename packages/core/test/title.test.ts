@@ -10,6 +10,12 @@ describe("isInjectedText", () => {
     expect(isInjectedText("   ")).toBe(true);
   });
 
+  it("flags IDE context headers, aborted turns, and interruption markers", () => {
+    expect(isInjectedText("# Context from my IDE setup:\n## Active file: src/app.tsx")).toBe(true);
+    expect(isInjectedText("<turn_aborted> The user interrupted the previous turn on purpose.")).toBe(true);
+    expect(isInjectedText("[Request interrupted by user]")).toBe(true);
+  });
+
   it("treats a real prompt as human", () => {
     expect(isInjectedText("Fix the checkbox bug please")).toBe(false);
   });
