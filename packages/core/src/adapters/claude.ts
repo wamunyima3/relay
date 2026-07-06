@@ -118,8 +118,10 @@ export class ClaudeAdapter implements Adapter {
     const lines = objects as ClaudeLine[];
     let cwd: string | undefined;
     let count = 0;
+    let relayed = false;
     for (const l of lines) {
       if (l.cwd && !cwd) cwd = l.cwd;
+      if (l.version === "relay") relayed = true;
       if ((l.type === "user" || l.type === "assistant") && !l.isMeta && l.message?.content) count += 1;
     }
     const title = deriveClaudeTitle(lines);
@@ -132,6 +134,7 @@ export class ClaudeAdapter implements Adapter {
       title,
       updatedAt: st.mtime.toISOString(),
       messageCount: count,
+      relayed: relayed || undefined,
     };
   }
 
@@ -152,6 +155,7 @@ export class ClaudeAdapter implements Adapter {
     let cwd: string | undefined;
     let gitBranch: string | undefined;
     let version: string | undefined;
+    let model: string | undefined;
     const title = ref.title ?? deriveClaudeTitle(lines);
     let sessionId = ref.id;
 
@@ -166,6 +170,8 @@ export class ClaudeAdapter implements Adapter {
       if (l.gitBranch && !gitBranch) gitBranch = l.gitBranch;
       if (l.version && !version) version = l.version;
       if (l.sessionId) sessionId = l.sessionId;
+      // Skip Relay's own placeholder so round-tripped sessions don't pin it.
+      if (l.message?.model && l.message.model !== "relay" && !model) model = l.message.model;
 
       const isMsg = l.type === "user" || l.type === "assistant" || l.type === "system";
       const rawContent = l.message?.content;
@@ -205,6 +211,7 @@ export class ClaudeAdapter implements Adapter {
       source: {
         tool: this.tool,
         version,
+        model,
         exported_at: new Date().toISOString(),
         native_session_id: sessionId,
       },
@@ -302,6 +309,13 @@ export class ClaudeAdapter implements Adapter {
         ? this.buildReplayLines(doc, opts, { sessionId, cwd, now })
         : this.buildNativeLines(doc, { sessionId, cwd, now });
 
+    // Name the staged session after the original conversation, so Claude's
+    // own picker and `relay list` show the real title rather than the first
+    // words of a priming prompt.
+    if (doc.title) {
+      lines.unshift({ type: "ai-title", aiTitle: doc.title, sessionId, timestamp: now });
+    }
+
     await writeJsonl(path, lines);
     return {
       tool: this.tool,
@@ -309,6 +323,7 @@ export class ClaudeAdapter implements Adapter {
       path,
       resumeCommand: `cd ${cwd} && claude --resume ${sessionId}`,
       mode,
+      launch: { cmd: "claude", args: ["--resume", sessionId], cwd },
     };
   }
 
@@ -350,6 +365,9 @@ export class ClaudeAdapter implements Adapter {
   ): unknown[] {
     const out: unknown[] = [];
     let parentUuid: string | null = null;
+    // Claude Code warns when it can't recognize a session's model — carry the
+    // real source model through instead of a "relay" placeholder when known.
+    const model = doc.source.model ?? "relay";
 
     for (const ev of doc.events) {
       const uuid = randomUUID();
@@ -377,7 +395,7 @@ export class ClaudeAdapter implements Adapter {
           ...common,
           type: role,
           message: role === "assistant"
-            ? { role, model: "relay", content: blocks }
+            ? { role, model, content: blocks }
             : { role, content: blocks },
         });
         parentUuid = uuid;
@@ -387,7 +405,7 @@ export class ClaudeAdapter implements Adapter {
           type: "assistant",
           message: {
             role: "assistant",
-            model: "relay",
+            model,
             content: [
               {
                 type: "tool_use",

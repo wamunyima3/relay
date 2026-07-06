@@ -12,6 +12,8 @@ const require = createRequire(import.meta.url);
 let work: string;
 let dbPath: string;
 const CID = "comp-1111";
+const UNNAMED_CID = "comp-2222";
+const EMPTY_CID = "comp-3333";
 
 /** Build a tiny Cursor-shaped state.vscdb fixture. */
 function buildFixtureDb(path: string): void {
@@ -31,10 +33,31 @@ function buildFixtureDb(path: string): void {
     JSON.stringify({
       allComposers: [
         { composerId: CID, name: "Fix the Dockerfile", createdAt: 1, lastUpdatedAt: 2, type: "head", unifiedMode: "agent" },
+        { composerId: UNNAMED_CID, createdAt: 1, lastUpdatedAt: 1, type: "head", unifiedMode: "agent" },
+        { composerId: EMPTY_CID, createdAt: 1, lastUpdatedAt: 1, type: "head", unifiedMode: "agent" },
       ],
     }),
   );
   const put = db.prepare("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)");
+
+  // An unnamed conversation — its title must fall back to the first user prompt.
+  put.run(`composerData:${UNNAMED_CID}`, JSON.stringify({
+    composerId: UNNAMED_CID,
+    createdAt: 1_600_000_000_000,
+    lastUpdatedAt: 1_600_000_500_000,
+    fullConversationHeadersOnly: [{ bubbleId: "u1", type: 1 }],
+    _v: 16,
+  }));
+  put.run(`bubbleId:${UNNAMED_CID}:u1`, JSON.stringify({ type: 1, text: "Why is the login page slow?" }));
+
+  // An empty shell (opened but never used) — must be hidden from listings.
+  put.run(`composerData:${EMPTY_CID}`, JSON.stringify({
+    composerId: EMPTY_CID,
+    createdAt: 1_600_000_000_000,
+    lastUpdatedAt: 1_600_000_000_000,
+    fullConversationHeadersOnly: [],
+    _v: 16,
+  }));
 
   const headers = [
     { bubbleId: "b1", type: 1 },
@@ -87,10 +110,24 @@ describe("CursorAdapter", () => {
     const adapter = new CursorAdapter();
     expect(await adapter.available()).toBe(true);
     const sessions = await adapter.list();
-    expect(sessions).toHaveLength(1);
-    expect(sessions[0]!.title).toBe("Fix the Dockerfile");
-    expect(sessions[0]!.messageCount).toBeUndefined(); // index has no count
-    expect(sessions[0]!.tool).toBe("cursor");
+    expect(sessions).toHaveLength(2);
+    const named = sessions.find((s) => s.id === CID)!;
+    expect(named.title).toBe("Fix the Dockerfile");
+    expect(named.messageCount).toBeUndefined(); // index has no count
+    expect(named.tool).toBe("cursor");
+  });
+
+  it("falls back to the first user prompt for unnamed conversations", async () => {
+    const adapter = new CursorAdapter();
+    const sessions = await adapter.list();
+    const unnamed = sessions.find((s) => s.id === UNNAMED_CID)!;
+    expect(unnamed.title).toBe("Why is the login page slow?");
+  });
+
+  it("hides empty conversation shells (opened but never used)", async () => {
+    const adapter = new CursorAdapter();
+    const sessions = await adapter.list();
+    expect(sessions.some((s) => s.id === EMPTY_CID)).toBe(false);
   });
 
   it("exports bubbles to UCF: message, thinking, tool_call + result", async () => {
@@ -146,10 +183,12 @@ describe("CursorAdapter", () => {
     expect(result.note).toMatch(/Cursor/);
     expect(result.backupPath).toBeTruthy();
 
-    // It shows up in the listing, at the top (newest), and re-exports its messages.
+    // It shows up in the listing, at the top (newest), tagged as Relay-created,
+    // and re-exports its messages.
     const sessions = await adapter.list();
     expect(sessions[0]!.id).toBe(result.sessionId);
     expect(sessions[0]!.title).toBe("Resumed from Codex");
+    expect(sessions[0]!.relayed).toBe(true);
 
     const reexported = await adapter.exportSession(sessions[0]!);
     const texts = reexported.events.map((e) => (e.content[0] as { text?: string })?.text);

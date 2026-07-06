@@ -78,11 +78,13 @@ export class CodexAdapter implements Adapter {
     let id = basename(path, ".jsonl");
     let cwd: string | undefined;
     let count = 0;
+    let relayed = false;
     const userMessages: { role: string | undefined; text: string }[] = [];
     for (const l of lines) {
       if (l.type === "session_meta" && l.payload) {
         id = String(l.payload.id ?? id);
         cwd = l.payload.cwd ? String(l.payload.cwd) : cwd;
+        if (l.payload.originator === "relay") relayed = true;
       }
       if (l.type === "response_item" && l.payload?.type === "message") {
         count += 1;
@@ -102,6 +104,7 @@ export class CodexAdapter implements Adapter {
       title,
       updatedAt: st.mtime.toISOString(),
       messageCount: count,
+      relayed: relayed || undefined,
     };
   }
 
@@ -123,6 +126,7 @@ export class CodexAdapter implements Adapter {
     let cwd: string | undefined;
     let version: string | undefined;
     let originator: string | undefined;
+    let model: string | undefined;
     let repo: string | null = null;
     let commit: string | null = null;
     let gitBranch: string | null = null;
@@ -149,6 +153,11 @@ export class CodexAdapter implements Adapter {
           commit = git.commit_hash ?? commit;
           gitBranch = git.branch ?? gitBranch;
         }
+        continue;
+      }
+      // Codex records the active model on turn_context lines.
+      if (l.type === "turn_context" && l.payload?.model && !model) {
+        model = String(l.payload.model);
         continue;
       }
       if (l.type !== "response_item" || !l.payload) continue;
@@ -249,6 +258,7 @@ export class CodexAdapter implements Adapter {
       source: {
         tool: this.tool,
         version: version ?? originator,
+        model,
         exported_at: new Date().toISOString(),
         native_session_id: sessionId,
       },
@@ -333,6 +343,7 @@ export class CodexAdapter implements Adapter {
       path,
       resumeCommand: `cd ${cwd} && codex resume ${sessionId}`,
       mode,
+      launch: { cmd: "codex", args: ["resume", sessionId], cwd },
     };
   }
 

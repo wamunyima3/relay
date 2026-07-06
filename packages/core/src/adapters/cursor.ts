@@ -8,6 +8,7 @@ import { UCF_VERSION } from "../ucf/schema.js";
 import { reduceOutput } from "../util/text.js";
 import { cursorGlobalDb, relayBackupsDir } from "../util/paths.js";
 import { openReadOnly, openWritable, type SqliteDb } from "../util/sqlite.js";
+import { firstHumanPromptTitle } from "../util/title.js";
 
 /**
  * Cursor adapter.
@@ -100,11 +101,51 @@ export class CursorAdapter implements Adapter {
     if (!existsSync(cursorGlobalDb())) return [];
     const db = this.open();
     try {
-      const refs = this.listFromIndex(db) ?? this.listFromBlobs(db);
+      let refs = this.listFromIndex(db) ?? this.listFromBlobs(db);
       refs.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+      // Cursor's index keeps entries for conversations that were opened but
+      // never used (zero bubbles) — hide those, and give the remaining unnamed
+      // ones a title from their first user prompt (like Codex). Bounded so a
+      // huge history can't slow the listing.
+      let peeks = 25;
+      const empty = new Set<string>();
+      for (const ref of refs) {
+        if (ref.title || peeks <= 0) continue;
+        peeks -= 1;
+        const peeked = this.peekComposer(db, ref.id);
+        if (peeked.empty) empty.add(ref.id);
+        else ref.title = peeked.title;
+      }
+      if (empty.size > 0) refs = refs.filter((r) => !empty.has(r.id));
       return refs;
     } finally {
       db.close();
+    }
+  }
+
+  /**
+   * Cheap look inside a composer blob: is it an empty shell, and if not, what
+   * would its first-user-prompt title be? A missing/unreadable blob is treated
+   * as non-empty (defensive: never hide something we couldn't inspect).
+   */
+  private peekComposer(db: SqliteDb, composerId: string): { title?: string; empty: boolean } {
+    try {
+      const row = db.prepare("SELECT value FROM cursorDiskKV WHERE key = ?").get(`composerData:${composerId}`);
+      const composer = row ? parseJsonValue(row.value) : null;
+      if (!composer) return { empty: false };
+      const headers = (composer.fullConversationHeadersOnly as { bubbleId: string; type: number }[]) ?? [];
+      if (headers.length === 0) return { empty: true };
+      const userMessages: { role: string; text: string }[] = [];
+      for (const h of headers) {
+        if (h.type !== BUBBLE_USER || userMessages.length >= 5) continue;
+        const brow = db.prepare("SELECT value FROM cursorDiskKV WHERE key = ?").get(`bubbleId:${composerId}:${h.bubbleId}`);
+        const bubble = brow ? parseJsonValue(brow.value) : null;
+        const text = String(bubble?.text ?? "").trim();
+        if (text) userMessages.push({ role: "user", text });
+      }
+      return { title: firstHumanPromptTitle(userMessages), empty: false };
+    } catch {
+      return { empty: false };
     }
   }
 
@@ -140,6 +181,7 @@ export class CursorAdapter implements Adapter {
         path: cursorGlobalDb(),
         title: name,
         updatedAt: updated ? new Date(updated).toISOString() : undefined,
+        relayed: c.relayCreated === true || undefined,
       });
     }
     return refs;
@@ -371,6 +413,11 @@ export class CursorAdapter implements Adapter {
         mode,
         note: "Fully quit and reopen Cursor — the conversation is at the top of your chat history.",
         backupPath,
+        // GUI-only: the best `--open` can do is bring the app up (macOS only).
+        launch:
+          process.platform === "darwin"
+            ? { cmd: "open", args: ["-a", "Cursor"], cwd: process.cwd() }
+            : undefined,
       };
     } finally {
       db.close();
@@ -426,6 +473,7 @@ export class CursorAdapter implements Adapter {
       _v: 16,
       composerId,
       name,
+      relayCreated: true,
       createdAt: now,
       lastUpdatedAt: now,
       unifiedMode: "agent",
@@ -474,6 +522,7 @@ export class CursorAdapter implements Adapter {
       ...template,
       composerId,
       name,
+      relayCreated: true,
       subtitle: "",
       createdAt: now,
       lastUpdatedAt: now,

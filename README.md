@@ -105,10 +105,15 @@ scripts use `relay` below.
 ### Conversation titles
 
 Relay shows the same name each tool shows in its own history: Claude Code's
-model-generated `aiTitle`, and — since Codex stores no title — the first genuine
-user prompt of a Codex session. Injected scaffolding (environment context,
-`AGENTS.md`, IDE hints, slash-command wrappers) is skipped so the name reflects
-what you actually asked.
+model-generated `aiTitle`, and — since Codex and unnamed Cursor chats store no
+title — the first genuine user prompt. Injected scaffolding (environment
+context, `AGENTS.md`, IDE hints, slash-command wrappers, aborted-turn markers)
+is skipped so the name reflects what you actually asked. Cursor chat windows
+that were opened but never used are hidden entirely.
+
+Sessions that Relay itself staged are tagged **⇄ relayed** in `relay list` and
+the UI picker (type `relayed` in the picker's search to filter to them), so
+your originals stay distinguishable after a few cross-tool hops.
 
 ## Scriptable CLI
 
@@ -149,6 +154,9 @@ relay resume --to claude session.ucf.json
 #   ✔ Staged replay session for Claude Code
 #     Resume it with:
 #     cd /path/to/repo && claude --resume <new-session-id>
+
+# …or skip the copy-paste and land straight in the resumed session:
+relay resume --to claude session.ucf.json --open
 ```
 
 ### One-shot convert
@@ -156,7 +164,11 @@ relay resume --to claude session.ucf.json
 ```bash
 relay convert --from codex --to claude --session 019ecefd
 relay convert --from claude --to codex            # uses most recent
+relay convert --from claude --to codex --open     # …and open it right now
 ```
+
+`--open` execs the destination CLI in the right project directory
+(`claude --resume` / `codex resume`; for Cursor on macOS it brings the app up).
 
 ### Inspect a UCF file
 
@@ -170,10 +182,19 @@ relay inspect session.ucf.json --markdown   # full readable transcript
 - **`replay`** (default, universal, lossy) — the whole conversation is packaged
   as one well-structured priming prompt ("here's the prior conversation and
   decisions, continue from here") and dropped into a fresh session. Works on any
-  surface. Start here.
+  surface. Start here. Huge sessions are budgeted automatically: the most
+  recent events survive verbatim and older ones are elided with a note (the
+  recap always covers the full conversation).
 - **`native`** (`--mode native`, high-fidelity) — events are reconstructed
   one-to-one into the destination's native format so its own `--resume`/`resume`
   picks them up seamlessly. Strongest for the Claude ⇄ Codex JSONL pair.
+
+In both modes the destination copy is cleaned before writing: the source
+tool's injected scaffolding (permissions blocks, `AGENTS.md`, environment
+context) is stripped — the destination injects its own — and staged Claude
+sessions carry the original conversation's title and model name, so they look
+right in pickers and don't trigger unknown-model warnings. The exported UCF
+file itself keeps full fidelity.
 
 ```bash
 relay convert --from codex --to claude --mode native

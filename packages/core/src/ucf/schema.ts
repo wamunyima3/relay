@@ -105,6 +105,8 @@ export const ucfEvent = z.object({
 export const ucfSource = z.object({
   tool: z.string(),
   version: z.string().optional(),
+  /** Model that produced the assistant turns (e.g. "claude-sonnet-5", "gpt-5.4"), when the source records it. */
+  model: z.string().optional(),
   exported_at: z.string(),
   /** Original native session id, so a round-trip can be correlated. */
   native_session_id: z.string().optional(),

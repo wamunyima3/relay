@@ -9,6 +9,8 @@ export interface SessionRef {
   cwd?: string;
   updatedAt?: string;
   messageCount?: number;
+  /** True when Relay itself staged this session (a resume target, not an original). */
+  relayed?: boolean;
 }
 
 export interface ExportOptions {
@@ -43,6 +45,8 @@ export interface ImportResult {
   note?: string;
   /** Path to a safety backup written before modifying existing data, if any. */
   backupPath?: string;
+  /** How to open the resumed session right now (powers `--open`), when possible. */
+  launch?: { cmd: string; args: string[]; cwd: string };
 }
 
 /**
