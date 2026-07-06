@@ -166,8 +166,12 @@ export class ClaudeAdapter implements Adapter {
       if (l.sessionId) sessionId = l.sessionId;
 
       const isMsg = l.type === "user" || l.type === "assistant" || l.type === "system";
-      const content = l.message?.content;
-      if (!isMsg || !Array.isArray(content)) continue;
+      const rawContent = l.message?.content;
+      if (!isMsg || rawContent == null) continue;
+      // Claude stores plain single-line turns as a bare string rather than the
+      // typed content-block array; normalize so those aren't silently dropped.
+      const content = typeof rawContent === "string" ? [{ type: "text", text: rawContent }] : rawContent;
+      if (!Array.isArray(content)) continue;
 
       const role = (l.message?.role ?? l.type) as UcfEvent["role"];
       const uuid = l.uuid ?? `line-${lineNo}`;

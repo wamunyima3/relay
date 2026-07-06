@@ -141,6 +141,40 @@ describe("ClaudeAdapter", () => {
     expect(ref.id).toBe(fullId);
   });
 
+  it("exports user/assistant turns whose message.content is a bare string, not a block array", async () => {
+    const sid = "44444444-4444-4444-4444-444444444444";
+    const lines = [
+      {
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        sessionId: sid,
+        cwd: "/repo/app",
+        timestamp: "2026-06-01T09:00:00Z",
+        message: { role: "user", content: "quick question, is this complete?" },
+      },
+      {
+        type: "assistant",
+        uuid: "a1",
+        parentUuid: "u1",
+        sessionId: sid,
+        timestamp: "2026-06-01T09:00:01Z",
+        message: { role: "assistant", content: "Let me check." },
+      },
+    ];
+    const dir = join(work, "claude", "-repo-app3");
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, `${sid}.jsonl`);
+    await writeFile(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+
+    const adapter = new ClaudeAdapter();
+    const ref = await adapter.resolve(path);
+    const doc = await adapter.exportSession(ref);
+    expect(doc.events).toHaveLength(2);
+    expect(doc.events[0]?.content).toEqual([{ kind: "text", text: "quick question, is this complete?" }]);
+    expect(doc.events[1]?.content).toEqual([{ kind: "text", text: "Let me check." }]);
+  });
+
   it("packages a replay session as a single priming message", async () => {
     const adapter = new ClaudeAdapter();
     const srcPath = join(work, "claude", "-repo-app", "11111111-1111-1111-1111-111111111111.jsonl");
