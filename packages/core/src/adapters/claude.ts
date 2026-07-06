@@ -302,6 +302,13 @@ export class ClaudeAdapter implements Adapter {
         ? this.buildReplayLines(doc, opts, { sessionId, cwd, now })
         : this.buildNativeLines(doc, { sessionId, cwd, now });
 
+    // Name the staged session after the original conversation, so Claude's
+    // own picker and `relay list` show the real title rather than the first
+    // words of a priming prompt.
+    if (doc.title) {
+      lines.unshift({ type: "ai-title", aiTitle: doc.title, sessionId, timestamp: now });
+    }
+
     await writeJsonl(path, lines);
     return {
       tool: this.tool,

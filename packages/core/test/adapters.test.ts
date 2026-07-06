@@ -128,8 +128,11 @@ describe("ClaudeAdapter", () => {
     expect(result.resumeCommand).toContain("claude --resume");
     const { objects } = await readJsonl(result.path);
     expect(objects.length).toBeGreaterThan(0);
-    // First emitted line is the opening user message with no parent.
-    const first = objects[0] as { type: string; parentUuid: unknown };
+    // First emitted message line is the opening user message with no parent
+    // (a title line may precede it).
+    const first = objects.find(
+      (o) => (o as { type?: string }).type === "user" || (o as { type?: string }).type === "assistant",
+    ) as { type: string; parentUuid: unknown };
     expect(first.type).toBe("user");
     expect(first.parentUuid).toBeNull();
   });
@@ -223,7 +226,7 @@ describe("ClaudeAdapter", () => {
     expect(genuineEvent?.provenance?.meta).toBeFalsy();
   });
 
-  it("packages a replay session as a single priming message", async () => {
+  it("packages a replay session as a single priming message, titled after the original", async () => {
     const adapter = new ClaudeAdapter();
     const srcPath = join(work, "claude", "-repo-app", "11111111-1111-1111-1111-111111111111.jsonl");
     const doc = await adapter.exportSession(await adapter.resolve(srcPath));
@@ -233,9 +236,14 @@ describe("ClaudeAdapter", () => {
       primingPrompt: "RESUME-ME",
     });
     const { objects } = await readJsonl(result.path);
-    expect(objects.length).toBe(1);
-    const line = objects[0] as { message: { content: { text: string }[] } };
+    const users = objects.filter((o) => (o as { type?: string }).type === "user");
+    expect(users.length).toBe(1);
+    const line = users[0] as { message: { content: { text: string }[] } };
     expect(line.message.content[0]!.text).toBe("RESUME-ME");
+    // The staged session carries the source conversation's name, so pickers
+    // show "Fix the checkbox bug" rather than the priming prompt's first words.
+    const staged = await adapter.resolve(result.path);
+    expect(staged.title).toBe("Fix the checkbox bug");
   });
 });
 
