@@ -45,6 +45,8 @@ export interface ImportResult {
   note?: string;
   /** Path to a safety backup written before modifying existing data, if any. */
   backupPath?: string;
+  /** How to open the resumed session right now (powers `--open`), when possible. */
+  launch?: { cmd: string; args: string[]; cwd: string };
 }
 
 /**

@@ -323,6 +323,7 @@ export class ClaudeAdapter implements Adapter {
       path,
       resumeCommand: `cd ${cwd} && claude --resume ${sessionId}`,
       mode,
+      launch: { cmd: "claude", args: ["--resume", sessionId], cwd },
     };
   }
 

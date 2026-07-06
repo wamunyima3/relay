@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 import { Command } from "commander";
 import pc from "picocolors";
 
@@ -32,6 +33,20 @@ function printResumeResult(result: ImportResult): void {
     console.log(`\n  ${result.note}`);
     if (result.backupPath) console.log(pc.dim(`  Index backup: ${result.backupPath}`));
     console.log("");
+  }
+}
+
+/** `--open`: drop the user straight into the resumed session. */
+function openResumed(result: ImportResult): void {
+  if (!result.launch) {
+    console.log(pc.yellow(`  ${getAdapter(result.tool).label} can't be launched from the terminal — follow the note above.`));
+    return;
+  }
+  const { cmd, args, cwd } = result.launch;
+  console.log(pc.dim(`  Opening: ${cmd} ${args.join(" ")}  (in ${cwd})\n`));
+  const run = spawnSync(cmd, args, { cwd, stdio: "inherit" });
+  if (run.error) {
+    fail(`Couldn't launch ${cmd}: ${run.error.message}. Is it on your PATH?`);
   }
 }
 
@@ -125,10 +140,22 @@ program
   .argument("<ucf>", "path to a UCF .json file")
   .option("--mode <mode>", "replay (universal, lossy) | native (high-fidelity)", "replay")
   .option("--cwd <dir>", "destination working directory (default: from UCF)")
+  .option("--open", "launch the destination tool on the staged session right away")
   .option("--print", "print the priming prompt instead of writing a session")
+  .showHelpAfterError(
+    `\nTip: resume stages an exported UCF file. To go tool→tool in one step:\n  relay convert --from <tool> --to <tool> [--session <id>]`,
+  )
   .action(async (ucfPath, opts) => {
     try {
-      const doc = await loadUcf(ucfPath);
+      const doc = await loadUcf(ucfPath).catch((e: NodeJS.ErrnoException) => {
+        if (e.code === "ENOENT") {
+          fail(
+            `No such file: ${ucfPath}\n  resume takes a UCF file exported with \`relay export\`.\n` +
+              `  To resume a session by id in one step: relay convert --from <tool> --to <tool> --session ${ucfPath}`,
+          );
+        }
+        throw e;
+      });
       if (opts.print) {
         // Mirror exactly what resumeIntoTool would write.
         console.log(buildPrimingPrompt(stripScaffolding(doc), getAdapter(opts.to).label));
@@ -141,6 +168,7 @@ program
       console.log(pc.green(`✔ Staged ${opts.mode} session for ${getAdapter(opts.to).label}`));
       console.log(pc.dim(`  ${result.path}`));
       printResumeResult(result);
+      if (opts.open) openResumed(result);
     } catch (e) {
       fail((e as Error).message);
     }
@@ -155,6 +183,7 @@ program
   .option("--session <idOrPath>", "source session (default: most recent)")
   .option("--mode <mode>", "replay | native", "replay")
   .option("--cwd <dir>", "destination working directory")
+  .option("--open", "launch the destination tool on the staged session right away")
   .option("--no-redact", "do NOT strip secrets (unsafe)")
   .action(async (opts) => {
     try {
@@ -169,6 +198,7 @@ program
       const result = await resumeIntoTool(opts.to, doc, { mode: opts.mode, cwd: opts.cwd });
       console.log(pc.green(`✔ ${opts.from} → ${opts.to} (${opts.mode})`));
       printResumeResult(result);
+      if (opts.open) openResumed(result);
     } catch (e) {
       fail((e as Error).message);
     }

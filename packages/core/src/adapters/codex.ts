@@ -343,6 +343,7 @@ export class CodexAdapter implements Adapter {
       path,
       resumeCommand: `cd ${cwd} && codex resume ${sessionId}`,
       mode,
+      launch: { cmd: "codex", args: ["resume", sessionId], cwd },
     };
   }
 

@@ -413,6 +413,11 @@ export class CursorAdapter implements Adapter {
         mode,
         note: "Fully quit and reopen Cursor — the conversation is at the top of your chat history.",
         backupPath,
+        // GUI-only: the best `--open` can do is bring the app up (macOS only).
+        launch:
+          process.platform === "darwin"
+            ? { cmd: "open", args: ["-a", "Cursor"], cwd: process.cwd() }
+            : undefined,
       };
     } finally {
       db.close();
