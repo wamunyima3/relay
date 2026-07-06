@@ -252,6 +252,15 @@ describe("ClaudeAdapter", () => {
     // show "Fix the checkbox bug" rather than the priming prompt's first words.
     const staged = await adapter.resolve(result.path);
     expect(staged.title).toBe("Fix the checkbox bug");
+    // …and is tagged as Relay-created, so listings can tell it apart.
+    expect(staged.relayed).toBe(true);
+  });
+
+  it("originals are not tagged as relayed", async () => {
+    const adapter = new ClaudeAdapter();
+    const srcPath = join(work, "claude", "-repo-app", "11111111-1111-1111-1111-111111111111.jsonl");
+    const ref = await adapter.resolve(srcPath);
+    expect(ref.relayed).toBeUndefined();
   });
 });
 
@@ -294,5 +303,8 @@ describe("CodexAdapter", () => {
     const meta = objects[0] as { type: string; payload: { id: string } };
     expect(meta.type).toBe("session_meta");
     expect(meta.payload.id).toBe(result.sessionId);
+    // Staged rollouts are tagged so listings can tell them apart.
+    const staged = await adapter.resolve(result.path);
+    expect(staged.relayed).toBe(true);
   });
 });

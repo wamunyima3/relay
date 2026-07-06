@@ -183,10 +183,12 @@ describe("CursorAdapter", () => {
     expect(result.note).toMatch(/Cursor/);
     expect(result.backupPath).toBeTruthy();
 
-    // It shows up in the listing, at the top (newest), and re-exports its messages.
+    // It shows up in the listing, at the top (newest), tagged as Relay-created,
+    // and re-exports its messages.
     const sessions = await adapter.list();
     expect(sessions[0]!.id).toBe(result.sessionId);
     expect(sessions[0]!.title).toBe("Resumed from Codex");
+    expect(sessions[0]!.relayed).toBe(true);
 
     const reexported = await adapter.exportSession(sessions[0]!);
     const texts = reexported.events.map((e) => (e.content[0] as { text?: string })?.text);

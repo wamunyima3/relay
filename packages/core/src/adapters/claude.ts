@@ -118,8 +118,10 @@ export class ClaudeAdapter implements Adapter {
     const lines = objects as ClaudeLine[];
     let cwd: string | undefined;
     let count = 0;
+    let relayed = false;
     for (const l of lines) {
       if (l.cwd && !cwd) cwd = l.cwd;
+      if (l.version === "relay") relayed = true;
       if ((l.type === "user" || l.type === "assistant") && !l.isMeta && l.message?.content) count += 1;
     }
     const title = deriveClaudeTitle(lines);
@@ -132,6 +134,7 @@ export class ClaudeAdapter implements Adapter {
       title,
       updatedAt: st.mtime.toISOString(),
       messageCount: count,
+      relayed: relayed || undefined,
     };
   }
 

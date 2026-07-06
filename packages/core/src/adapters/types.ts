@@ -9,6 +9,8 @@ export interface SessionRef {
   cwd?: string;
   updatedAt?: string;
   messageCount?: number;
+  /** True when Relay itself staged this session (a resume target, not an original). */
+  relayed?: boolean;
 }
 
 export interface ExportOptions {

@@ -78,11 +78,13 @@ export class CodexAdapter implements Adapter {
     let id = basename(path, ".jsonl");
     let cwd: string | undefined;
     let count = 0;
+    let relayed = false;
     const userMessages: { role: string | undefined; text: string }[] = [];
     for (const l of lines) {
       if (l.type === "session_meta" && l.payload) {
         id = String(l.payload.id ?? id);
         cwd = l.payload.cwd ? String(l.payload.cwd) : cwd;
+        if (l.payload.originator === "relay") relayed = true;
       }
       if (l.type === "response_item" && l.payload?.type === "message") {
         count += 1;
@@ -102,6 +104,7 @@ export class CodexAdapter implements Adapter {
       title,
       updatedAt: st.mtime.toISOString(),
       messageCount: count,
+      relayed: relayed || undefined,
     };
   }
 

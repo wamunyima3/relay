@@ -181,6 +181,7 @@ export class CursorAdapter implements Adapter {
         path: cursorGlobalDb(),
         title: name,
         updatedAt: updated ? new Date(updated).toISOString() : undefined,
+        relayed: c.relayCreated === true || undefined,
       });
     }
     return refs;
@@ -467,6 +468,7 @@ export class CursorAdapter implements Adapter {
       _v: 16,
       composerId,
       name,
+      relayCreated: true,
       createdAt: now,
       lastUpdatedAt: now,
       unifiedMode: "agent",
@@ -515,6 +517,7 @@ export class CursorAdapter implements Adapter {
       ...template,
       composerId,
       name,
+      relayCreated: true,
       subtitle: "",
       createdAt: now,
       lastUpdatedAt: now,

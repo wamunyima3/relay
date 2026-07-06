@@ -63,9 +63,10 @@ program
       }
       for (const s of sessions) {
         const title = s.title ? ` — ${s.title}` : "";
+        const relayed = s.relayed ? pc.magenta(" ⇄ relayed") : "";
         console.log(
           `  ${pc.cyan(s.id.slice(0, 8))} ${pc.dim(s.updatedAt?.slice(0, 16) ?? "")} ` +
-            `${pc.dim(`[${s.messageCount ?? "?"} msgs]`)}${title}`,
+            `${pc.dim(`[${s.messageCount ?? "?"} msgs]`)}${relayed}${title}`,
         );
         if (s.cwd) console.log(pc.dim(`           ${s.cwd}`));
       }
