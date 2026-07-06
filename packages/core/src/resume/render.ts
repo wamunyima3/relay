@@ -23,44 +23,83 @@ export interface RenderOptions {
   toolOutputCap?: number;
 }
 
-/** Render a UCF document as a readable Markdown transcript. */
-export function renderMarkdown(doc: UcfDocument, opts: RenderOptions = {}): string {
-  const includeTools = opts.includeTools ?? true;
-  const cap = opts.toolOutputCap ?? 1200;
-  const out: string[] = [];
+/** Render one event as Markdown lines, or null if it contributes nothing. */
+function renderEvent(ev: UcfEvent, includeTools: boolean, cap: number): string[] | null {
+  if (ev.type === "message") {
+    const text = blockText(ev);
+    if (!text) return null;
+    const who = ev.role === "user" ? "🧑 User" : ev.role === "assistant" ? "🤖 Assistant" : "⚙️ System";
+    return [`### ${who}`, text, ""];
+  }
+  if (ev.type === "tool_call" && includeTools) {
+    return [`### 🔧 Tool call: \`${ev.tool}\``, "```json", JSON.stringify(ev.input ?? {}, null, 2), "```", ""];
+  }
+  if (ev.type === "tool_result" && includeTools) {
+    const o = ev.output ?? "";
+    return ["### 📤 Tool result", "```", o.length > cap ? o.slice(0, cap) + "\n…[truncated for transcript]" : o, "```", ""];
+  }
+  return null;
+}
 
+function headerLines(doc: UcfDocument): string[] {
+  const out: string[] = [];
   out.push(`# Conversation${doc.title ? `: ${doc.title}` : ""}`);
   out.push(
     `_Source: ${doc.source.tool}${doc.source.version ? ` v${doc.source.version}` : ""} · exported ${doc.source.exported_at}_`,
   );
   if (doc.project.cwd_hint) out.push(`_Project: ${doc.project.cwd_hint}${doc.project.git_branch ? ` (${doc.project.git_branch})` : ""}_`);
   out.push("");
+  return out;
+}
 
+/** Render a UCF document as a readable Markdown transcript. */
+export function renderMarkdown(doc: UcfDocument, opts: RenderOptions = {}): string {
+  const includeTools = opts.includeTools ?? true;
+  const cap = opts.toolOutputCap ?? 1200;
+  const out = headerLines(doc);
   for (const ev of doc.events) {
-    if (ev.type === "message") {
-      const text = blockText(ev);
-      if (!text) continue;
-      const who = ev.role === "user" ? "🧑 User" : ev.role === "assistant" ? "🤖 Assistant" : "⚙️ System";
-      out.push(`### ${who}`);
-      out.push(text);
-      out.push("");
-    } else if (ev.type === "tool_call" && includeTools) {
-      out.push(`### 🔧 Tool call: \`${ev.tool}\``);
-      out.push("```json");
-      out.push(JSON.stringify(ev.input ?? {}, null, 2));
-      out.push("```");
-      out.push("");
-    } else if (ev.type === "tool_result" && includeTools) {
-      const o = ev.output ?? "";
-      out.push(`### 📤 Tool result`);
-      out.push("```");
-      out.push(o.length > cap ? o.slice(0, cap) + "\n…[truncated for transcript]" : o);
-      out.push("```");
-      out.push("");
+    const lines = renderEvent(ev, includeTools, cap);
+    if (lines) out.push(...lines);
+  }
+  return out.join("\n").trim() + "\n";
+}
+
+/**
+ * Render the transcript newest-first under a character budget: the most
+ * recent events always survive, older ones fall off the top. Returns how many
+ * events were elided so the caller can say so.
+ */
+function renderBudgetedTranscript(
+  doc: UcfDocument,
+  budget: number,
+  opts: { includeTools: boolean; toolOutputCap: number },
+): { text: string; omitted: number } {
+  const chunks: string[] = [];
+  let used = 0;
+  let omitted = 0;
+  let full = false;
+
+  for (let i = doc.events.length - 1; i >= 0; i--) {
+    const lines = renderEvent(doc.events[i]!, opts.includeTools, opts.toolOutputCap);
+    if (!lines) continue;
+    if (full) {
+      omitted += 1;
+      continue;
     }
+    const chunk = lines.join("\n");
+    // Keep a contiguous tail: stop at the first event that doesn't fit
+    // (but always keep at least the most recent one, however large).
+    if (chunks.length > 0 && used + chunk.length > budget) {
+      full = true;
+      omitted += 1;
+      continue;
+    }
+    chunks.push(chunk);
+    used += chunk.length;
   }
 
-  return out.join("\n").trim() + "\n";
+  chunks.reverse();
+  return { text: [...headerLines(doc), ...chunks].join("\n").trim() + "\n", omitted };
 }
 
 /**
@@ -79,9 +118,23 @@ function prettyTool(id: string): string {
   return TOOL_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
 }
 
-export function buildPrimingPrompt(doc: UcfDocument, targetTool: string): string {
+export interface PrimingOptions {
+  /**
+   * Character budget for the transcript section. Large sessions otherwise
+   * produce multi-hundred-KB priming prompts that blow the destination's
+   * context (and cost) for no benefit — the recap covers the elided part.
+   * ~150k chars ≈ 40k tokens, comfortable in every current tool.
+   */
+  maxTranscriptChars?: number;
+}
+
+export function buildPrimingPrompt(doc: UcfDocument, targetTool: string, opts: PrimingOptions = {}): string {
   const summary = doc.summary ?? buildSummary(doc);
-  const transcript = renderMarkdown(doc, { includeTools: true });
+  const budget = opts.maxTranscriptChars ?? 150_000;
+  const { text: transcript, omitted } = renderBudgetedTranscript(doc, budget, {
+    includeTools: true,
+    toolOutputCap: 1200,
+  });
   return [
     `You are resuming a coding conversation that began in **${prettyTool(doc.source.tool)}** and is being continued in **${targetTool}** via Relay.`,
     ``,
@@ -90,7 +143,9 @@ export function buildPrimingPrompt(doc: UcfDocument, targetTool: string): string
     `## Recap`,
     summary,
     ``,
-    `## Full prior transcript`,
+    omitted > 0
+      ? `## Prior transcript (most recent part)\n_${omitted} earlier event(s) were elided to fit your context — the recap above covers the full conversation._`
+      : `## Full prior transcript`,
     transcript,
     ``,
     `---`,
